@@ -400,8 +400,8 @@ class SOM:
             n_iteration = {'random': 1000, 'sequential': 1000, 'batch': 10}[mode] * len(data_array)
 
         if verbose:
-            print("Training with ", n_iteration,
-                  " iterations.", "\n", "Training mode: ", mode)
+            print("Training with", n_iteration,
+                  "iterations.\nTraining mode:", mode, sep=' ')
         if mode == 'random':
             # Random sampling from training dataset
             for it, i in enumerate(
