@@ -1,6 +1,6 @@
 # %%
 from collections import Counter
-from typing import Union, Callable, Tuple
+from typing import Union, Callable, Tuple, Iterable
 
 import numpy as np
 import pandas as pd
@@ -149,7 +149,7 @@ class SOM:
             Defaults to _asymptotic_decay
         :param neighborhood_function: str: Neighborhood function name for the training process.
             May be either 'gaussian' or 'bubble'.
-        :param distance_function: function: Function for calculating distances/dissimilaties between models of the
+        :param distance_function: function: Function for calculating distances/dissimilarities between models of the
             network.
             May be a predefined one from this package, or a custom function, with the same parameters and return type.
             Defaults to _euclidean_distance.
@@ -256,7 +256,7 @@ class SOM:
         """
         return self._distance_function(x, self._weights)
 
-    def winner(self, x: Union[np.ndarray, pd.DataFrame, list]) -> Union[Iterable, tuple[ndarray]]:
+    def winner(self, x: Union[np.ndarray, pd.DataFrame, list]) -> Union[Iterable, Tuple[int, int]]:
         """
         Calculates the best-matching unit of the network for an instance x
 
