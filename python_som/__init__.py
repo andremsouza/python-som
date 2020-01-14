@@ -430,11 +430,11 @@ class SOM:
                     self._neighborhood_radius, it, n_iteration)
 
                 # Finding winner node (best-matching unit)
-                winner = self.winner(data_array[i])
+                winner = self.winner(i)
 
                 # Updating weights, based on current neighborhood function
                 self._weights += alpha * self._neighborhood_function(winner, sigma)[..., None] * (
-                        data_array[i] - self._weights)
+                        i - self._weights)
 
                 # Print progress, if verbose is activated
                 if verbose:
