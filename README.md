@@ -77,7 +77,7 @@ The following image is generated from the previous test code, with the U-matrix 
 In this graph, the instances are mapped to the self-organizing map, with color codes for each different label:
 * Setosa: blue circle
 * Versicolor: orange square
-* Virginica: reen diamond
+* Virginica: green diamond
 
 ![Test code output](./test_output_iris.png?raw=true)
 
