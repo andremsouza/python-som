@@ -59,7 +59,9 @@ def _inverse_decay(x: float, t: int, max_t: int) -> float:
     return (max_t / 100) * x / ((max_t / 100) + t)
 
 
-def _euclidean_distance(a: Union[float, np.ndarray], b: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+def _euclidean_distance(
+    a: Union[float, np.ndarray], b: Union[float, np.ndarray]
+) -> Union[float, np.ndarray]:
     """
     This function calculates the euclidean distances between the elements of the last dimension of a and b.
 
@@ -105,21 +107,25 @@ class SOM:
     """
 
     def __init__(
-            self,
-            x: Union[int, None],
-            y: Union[int, None],
-            input_len: int,
-            learning_rate: float = 0.5,
-            learning_rate_decay: Callable[[float, int, int], float] = _asymptotic_decay,
-            neighborhood_radius: float = 1.0,
-            neighborhood_radius_decay: Callable[[float, int, int], float] = _asymptotic_decay,
-            neighborhood_function: str = 'gaussian',
-            distance_function: Callable[
-                [Union[float, np.ndarray], Union[float, np.ndarray]], Union[float, np.ndarray]] = _euclidean_distance,
-            cyclic_x: bool = False,
-            cyclic_y: bool = False,
-            random_seed: Union[int, None] = None,
-            data: Union[np.ndarray, pd.DataFrame, list, None] = None,
+        self,
+        x: Union[int, None],
+        y: Union[int, None],
+        input_len: int,
+        learning_rate: float = 0.5,
+        learning_rate_decay: Callable[[float, int, int], float] = _asymptotic_decay,
+        neighborhood_radius: float = 1.0,
+        neighborhood_radius_decay: Callable[
+            [float, int, int], float
+        ] = _asymptotic_decay,
+        neighborhood_function: str = "gaussian",
+        distance_function: Callable[
+            [Union[float, np.ndarray], Union[float, np.ndarray]],
+            Union[float, np.ndarray],
+        ] = _euclidean_distance,
+        cyclic_x: bool = False,
+        cyclic_y: bool = False,
+        random_seed: Union[int, None] = None,
+        data: Union[np.ndarray, pd.DataFrame, list, None] = None,
     ) -> None:
         """
         Constructor for the self-organizing map class.
@@ -165,21 +171,24 @@ class SOM:
         """
         # Verifying map dimensions (initializing automatically, if a dataset is provided)
         if (x, y) == (None, None):
-            raise ValueError('At least one of the dimensions (x, y) must be specified')
+            raise ValueError("At least one of the dimensions (x, y) must be specified")
         if x is None or y is None:
             # If a dataset was given through **kwargs, select missing dimension with PCA
             # The ratio of the (x, y) sizes will comply roughly with the ratio of the two largest principal components
-            if 'data' is None:
+            if data == None:
                 raise ValueError(
                     "If one of the dimensions is not specified, a dataset must be provided for automatic size "
-                    "initialization.")
+                    "initialization."
+                )
             # Convert data to numpy array
             if isinstance(data, pd.DataFrame):
                 data_array = data.to_numpy()
             else:
                 data_array = np.array(data)
             # Perform PCA w/ sklearn
-            data_array = sklearn.preprocessing.StandardScaler().fit_transform(data_array)
+            data_array = sklearn.preprocessing.StandardScaler().fit_transform(
+                data_array
+            )
             pca = sklearn.decomposition.PCA(n_components=2)
             pca.fit(data_array)
             ratio = pca.explained_variance_[0] / pca.explained_variance_[1]
@@ -197,8 +206,9 @@ class SOM:
         self._neighborhood_radius = np.float(neighborhood_radius)
         self._neighborhood_radius_decay = neighborhood_radius_decay
         self._neighborhood_function = {
-            'gaussian': self._gaussian,
-            'bubble': self._bubble}[neighborhood_function]
+            "gaussian": self._gaussian,
+            "bubble": self._bubble,
+        }[neighborhood_function]
         self._distance_function = distance_function
         self._cyclic = (np.bool(cyclic_x), np.bool(cyclic_y))
         self._neigx, self._neigy = np.arange(self._shape[0]), np.arange(self._shape[1])
@@ -206,14 +216,16 @@ class SOM:
         # Seed numpy random generator
         if random_seed is None:
             self._random_seed = np.random.randint(
-                np.random.randint(np.iinfo(np.int32).max))
+                np.random.randint(np.iinfo(np.int32).max)
+            )
         else:
             self._random_seed = np.int(random_seed)
         np.random.seed(self._random_seed)
 
         # Random weight initialization
         self._weights = np.random.standard_normal(
-            size=(self._shape[0], self._shape[1], self._input_len))
+            size=(self._shape[0], self._shape[1], self._input_len)
+        )
 
     def get_shape(self) -> Tuple[int, int]:
         """
@@ -256,7 +268,9 @@ class SOM:
         """
         return self._distance_function(x, self._weights)
 
-    def winner(self, x: Union[np.ndarray, pd.DataFrame, list]) -> Union[Iterable, Tuple[int, int]]:
+    def winner(
+        self, x: Union[np.ndarray, pd.DataFrame, list]
+    ) -> Union[Iterable, Tuple[int, int]]:
         """
         Calculates the best-matching unit of the network for an instance x
 
@@ -279,7 +293,12 @@ class SOM:
             data_array = data.to_numpy()
         else:
             data_array = np.array(data)
-        return np.array([(self._distance_function(i, self._weights[self.winner(i)])) for i in data_array])
+        return np.array(
+            [
+                (self._distance_function(i, self._weights[self.winner(i)]))
+                for i in data_array
+            ]
+        )
 
     def quantization_error(self, data: Union[np.ndarray, pd.DataFrame, list]) -> float:
         """
@@ -300,16 +319,20 @@ class SOM:
         :return: np.ndarray: U-matrix of the current state of the network.
         """
         um = np.zeros(shape=self._shape)
-        it = np.nditer(um, flags=['multi_index'])
+        it = np.nditer(um, flags=["multi_index"])
         while not it.finished:
             update_matrix = self._bubble(it.multi_index, 1)
             um[it.multi_index] = np.sum(
-                update_matrix * self._distance_function(self._weights[it.multi_index], self._weights))
+                update_matrix
+                * self._distance_function(self._weights[it.multi_index], self._weights)
+            )
             it.iternext()
         um /= um.max(initial=0.0)
         return um
 
-    def activation_matrix(self, data: Union[np.ndarray, pd.DataFrame, list]) -> np.ndarray:
+    def activation_matrix(
+        self, data: Union[np.ndarray, pd.DataFrame, list]
+    ) -> np.ndarray:
         """
         Calculates the activation matrix of the network for a dataset, i.e., for each node, the count of instances that
         have been assigned to it, in the current state.
@@ -341,13 +364,18 @@ class SOM:
             data_array = data.to_numpy()
         else:
             data_array = np.array(data)
-        winner_map = {(i, j): [] for i in range(self._shape[0]) for j in range(self._shape[1])}
+        winner_map = {
+            (i, j): [] for i in range(self._shape[0]) for j in range(self._shape[1])
+        }
         for i in data_array:
             winner_map[self.winner(i)].append(i)
         return winner_map
 
-    def label_map(self, data: Union[np.ndarray, pd.DataFrame, list],
-                  labels: Union[np.ndarray, pd.DataFrame, list]) -> dict:
+    def label_map(
+        self,
+        data: Union[np.ndarray, pd.DataFrame, list],
+        labels: Union[np.ndarray, pd.DataFrame, list],
+    ) -> dict:
         """
         Calculates, for each node (i, j) of the network, the frequency of each label from 'labels' corresponding to its
         respective instance from 'data' that has been assigned to this node.
@@ -366,15 +394,22 @@ class SOM:
         else:
             labels = np.array(labels)
 
-        winner_map = {(i, j): [] for i in range(self._shape[0]) for j in range(self._shape[1])}
+        winner_map = {
+            (i, j): [] for i in range(self._shape[0]) for j in range(self._shape[1])
+        }
         for i in range(len(data_array)):
             winner_map[self.winner(data_array[i])].append(labels[i])
         for key in winner_map:
             winner_map[key] = Counter(winner_map[key])
         return winner_map
 
-    def train(self, data: Union[np.ndarray, pd.DataFrame, list], n_iteration: Union[int, None] = None,
-              mode: str = 'random', verbose: bool = False) -> float:
+    def train(
+        self,
+        data: Union[np.ndarray, pd.DataFrame, list],
+        n_iteration: Union[int, None] = None,
+        mode: str = "random",
+        verbose: bool = False,
+    ) -> float:
         """
         Trains the self-organizing map, with the dataset 'data', and a certain number of iterations.
 
@@ -397,54 +432,89 @@ class SOM:
 
         # If no number of iterations is given, select automatically
         if n_iteration is None:
-            n_iteration = {'random': 1000, 'sequential': 1000, 'batch': 10}[mode] * len(data_array)
+            n_iteration = {"random": 1000, "sequential": 1000, "batch": 10}[mode] * len(
+                data_array
+            )
 
         if verbose:
-            print("Training with", n_iteration,
-                  "iterations.\nTraining mode:", mode, sep=' ')
-        if mode == 'random':
+            print(
+                "Training with",
+                n_iteration,
+                "iterations.\nTraining mode:",
+                mode,
+                sep=" ",
+            )
+        if mode == "random":
             # Random sampling from training dataset
             for it, i in enumerate(
-                    np.random.choice(len(data_array), size=n_iteration, replace=(n_iteration > len(data)))):
+                np.random.choice(
+                    len(data_array), size=n_iteration, replace=(n_iteration > len(data))
+                )
+            ):
                 # Calculating decaying alpha and sigma parameters for updating weights
                 alpha = self._learning_rate_decay(self._learning_rate, it, n_iteration)
                 sigma = self._neighborhood_radius_decay(
-                    self._neighborhood_radius, it, n_iteration)
+                    self._neighborhood_radius, it, n_iteration
+                )
 
                 # Finding winner node (best-matching unit)
                 winner = self.winner(data_array[i])
 
                 # Updating weights, based on current neighborhood function
-                self._weights += alpha * self._neighborhood_function(winner, sigma)[..., None] * (
-                        data_array[i] - self._weights)
+                self._weights += (
+                    alpha
+                    * self._neighborhood_function(winner, sigma)[..., None]
+                    * (data_array[i] - self._weights)
+                )
 
                 # Print progress, if verbose is activated
                 if verbose:
-                    print("Iteration:", it, "/", n_iteration, sep=' ', end='\r', flush=True)
-        elif mode == 'sequential':
+                    print(
+                        "Iteration:",
+                        it,
+                        "/",
+                        n_iteration,
+                        sep=" ",
+                        end="\r",
+                        flush=True,
+                    )
+        elif mode == "sequential":
             # Sequential sampling from training dataset
             for it, i in enumerate(data_array):
                 # Calculating decaying alpha and sigma parameters for updating weights
                 alpha = self._learning_rate_decay(self._learning_rate, it, n_iteration)
                 sigma = self._neighborhood_radius_decay(
-                    self._neighborhood_radius, it, n_iteration)
+                    self._neighborhood_radius, it, n_iteration
+                )
 
                 # Finding winner node (best-matching unit)
                 winner = self.winner(i)
 
                 # Updating weights, based on current neighborhood function
-                self._weights += alpha * self._neighborhood_function(winner, sigma)[..., None] * (
-                        i - self._weights)
+                self._weights += (
+                    alpha
+                    * self._neighborhood_function(winner, sigma)[..., None]
+                    * (i - self._weights)
+                )
 
                 # Print progress, if verbose is activated
                 if verbose:
-                    print("Iteration:", it, "/", n_iteration, sep=' ', end='\r', flush=True)
-        elif mode == 'batch':
+                    print(
+                        "Iteration:",
+                        it,
+                        "/",
+                        n_iteration,
+                        sep=" ",
+                        end="\r",
+                        flush=True,
+                    )
+        elif mode == "batch":
             # Batch training
             for it in range(n_iteration):
                 # Calculating decaying sigma
                 sigma = self._neighborhood_radius_decay(
-                    self._neighborhood_radius, it, n_iteration)
+                    self._neighborhood_radius, it, n_iteration
+                )
 
                 # For each node, create a list of instances associated to it
                 winner_map = self.winner_map(data_array)
@@ -467,20 +537,33 @@ class SOM:
 
                 # Print progress, if verbose is activated
                 if verbose:
-                    print("Iteration:", it, "/", n_iteration, sep=' ', end='\r', flush=True)
+                    print(
+                        "Iteration:",
+                        it,
+                        "/",
+                        n_iteration,
+                        sep=" ",
+                        end="\r",
+                        flush=True,
+                    )
         else:
             # Invalid training mode value
             raise ValueError(
-                "Invalid value for 'mode' parameter. Value should be in " + str(['random', 'sequential', 'batch']))
+                "Invalid value for 'mode' parameter. Value should be in "
+                + str(["random", "sequential", "batch"])
+            )
 
         # Compute quantization error
         q_error = self.quantization_error(data_array)
         if verbose:
-            print("Quantization error:", q_error, sep=' ')
+            print("Quantization error:", q_error, sep=" ")
         return q_error
 
-    def weight_initialization(self, mode: str = 'random',
-                              **kwargs: Union[np.ndarray, pd.DataFrame, list, str, int]) -> None:
+    def weight_initialization(
+        self,
+        mode: str = "random",
+        **kwargs: Union[np.ndarray, pd.DataFrame, list, str, int]
+    ) -> None:
         """
         Function for weight initialization of the self-organizing map. Calls other methods for each initialization mode.
 
@@ -492,15 +575,22 @@ class SOM:
             For 'random' and 'sample' modes, 'random_seed': int may be provided for the random value generator.
             For 'sample' and 'linear' modes, 'data': array-like must be provided for sampling/PCA.
         """
-        modes = {'random': self._weight_initialization_random, 'linear': self._weight_initialization_linear,
-                 'sample': self._weight_initialization_sample}
+        modes = {
+            "random": self._weight_initialization_random,
+            "linear": self._weight_initialization_linear,
+            "sample": self._weight_initialization_sample,
+        }
         try:
             modes[mode](**kwargs)
         except KeyError:
-            raise ValueError("Invalid value for 'mode' parameter. Value should be in " + str(modes.keys()))
+            raise ValueError(
+                "Invalid value for 'mode' parameter. Value should be in "
+                + str(modes.keys())
+            )
 
-    def _weight_initialization_random(self, sample_mode: str = 'standard_normal',
-                                      random_seed: Union[int, None] = None) -> None:
+    def _weight_initialization_random(
+        self, sample_mode: str = "standard_normal", random_seed: Union[int, None] = None
+    ) -> None:
         """
         Random initialization method. Assigns weights from a random distribution defined by 'sample_mode'.
 
@@ -508,12 +598,14 @@ class SOM:
             Defaults to 'standard_normal'.
         :param random_seed: int or None: Seed for NumPy random value generator. Defaults to None.
         """
-        sample_modes = {'uniform': np.random.random, 'standard_normal': np.random.standard_normal}
+        sample_modes = {
+            "uniform": np.random.random,
+            "standard_normal": np.random.standard_normal,
+        }
 
         # Seed numpy random generator
         if random_seed is None:
-            random_seed = np.random.randint(
-                np.random.randint(np.iinfo(np.int32).max))
+            random_seed = np.random.randint(np.random.randint(np.iinfo(np.int32).max))
         else:
             random_seed = np.int(random_seed)
         np.random.seed(random_seed)
@@ -523,9 +615,13 @@ class SOM:
             self._weights = sample_modes[sample_mode](size=self._weights.shape)
         except KeyError:
             raise ValueError(
-                "Invalid value for 'sample_mode' parameter. Value should be in " + str(sample_modes.keys()))
+                "Invalid value for 'sample_mode' parameter. Value should be in "
+                + str(sample_modes.keys())
+            )
 
-    def _weight_initialization_linear(self, data: Union[np.ndarray, pd.DataFrame, list]) -> None:
+    def _weight_initialization_linear(
+        self, data: Union[np.ndarray, pd.DataFrame, list]
+    ) -> None:
         """
         Linear initialization method. Assigns weights spanning the hyperplane formed by the two first principal
         components of 'data'.
@@ -548,10 +644,15 @@ class SOM:
         # Initialize weights spanning first 2 principal components of data
         for i, c1 in enumerate(np.linspace(-1, 1, num=self._shape[0])):
             for j, c2 in enumerate(np.linspace(-1, 1, num=self._shape[1])):
-                self._weights[i, j] = c1 * pca.explained_variance_[0] + c2 * pca.explained_variance_[1]
+                self._weights[i, j] = (
+                    c1 * pca.explained_variance_[0] + c2 * pca.explained_variance_[1]
+                )
 
-    def _weight_initialization_sample(self, data: Union[np.ndarray, pd.DataFrame, list],
-                                      random_seed: Union[int, None] = None) -> None:
+    def _weight_initialization_sample(
+        self,
+        data: Union[np.ndarray, pd.DataFrame, list],
+        random_seed: Union[int, None] = None,
+    ) -> None:
         """
         Initialization method. Assigns weights to random samples from an input dataset.
 
@@ -560,8 +661,7 @@ class SOM:
         """
         # Seed numpy random generator
         if random_seed is None:
-            random_seed = np.random.randint(
-                np.random.randint(np.iinfo(np.int32).max))
+            random_seed = np.random.randint(np.random.randint(np.iinfo(np.int32).max))
         else:
             random_seed = np.int(random_seed)
         np.random.seed(random_seed)
@@ -574,8 +674,9 @@ class SOM:
 
         # Assign weights to random samples from dataset
         sample_size = self._shape[0] * self._shape[1]
-        sample = np.random.choice(len(data_array), size=sample_size,
-                                  replace=(sample_size > len(data_array)))
+        sample = np.random.choice(
+            len(data_array), size=sample_size, replace=(sample_size > len(data_array))
+        )
         self._weights = data_array[sample].reshape(self._weights.shape)
 
     def _gaussian(self, c: Tuple[int, int], sigma: float) -> np.ndarray:
@@ -622,13 +723,13 @@ class SOM:
         # Calculate cyclic regions
         if self._cyclic[0]:
             if c[0] - sigma < 0:
-                ax[int(c[0] - sigma):] = True
+                ax[int(c[0] - sigma) :] = True
             if c[0] + sigma >= self._shape[0]:
-                ax[:int((c[0] + sigma) % self._shape[0] + 1)] = True
+                ax[: int((c[0] + sigma) % self._shape[0] + 1)] = True
         if self._cyclic[1]:
             if c[1] - sigma < 0:
-                ay[int(c[1] - sigma):] = True
+                ay[int(c[1] - sigma) :] = True
             if c[1] + sigma >= self._shape[1]:
-                ay[:int((c[1] + sigma) % self._shape[1] + 1)] = True
+                ay[: int((c[1] + sigma) % self._shape[1] + 1)] = True
 
         return np.outer(ax, ay).astype(int)
