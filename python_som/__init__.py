@@ -201,16 +201,16 @@ class SOM:
         # Initializing private variables
         self._shape = (np.uint(x), np.uint(y))
         self._input_len = np.uint(input_len)
-        self._learning_rate = np.float(learning_rate)
+        self._learning_rate = np.float64(learning_rate)
         self._learning_rate_decay = learning_rate_decay
-        self._neighborhood_radius = np.float(neighborhood_radius)
+        self._neighborhood_radius = np.float64(neighborhood_radius)
         self._neighborhood_radius_decay = neighborhood_radius_decay
         self._neighborhood_function = {
             "gaussian": self._gaussian,
             "bubble": self._bubble,
         }[neighborhood_function]
         self._distance_function = distance_function
-        self._cyclic = (np.bool(cyclic_x), np.bool(cyclic_y))
+        self._cyclic = (bool(cyclic_x), bool(cyclic_y))
         self._neigx, self._neigy = np.arange(self._shape[0]), np.arange(self._shape[1])
 
         # Seed numpy random generator
@@ -249,7 +249,7 @@ class SOM:
 
         :param learning_rate: float: New value for learning_rate of an instance of the SOM.
         """
-        self._learning_rate = np.float(learning_rate)
+        self._learning_rate = np.float64(learning_rate)
 
     def set_neighborhood_radius(self, neighborhood_radius: float) -> None:
         """
@@ -257,7 +257,7 @@ class SOM:
 
         :param neighborhood_radius: float: New value for neighborhood_radius of an instance of the SOM.
         """
-        self._neighborhood_radius = np.float(neighborhood_radius)
+        self._neighborhood_radius = np.float64(neighborhood_radius)
 
     def activate(self, x: Union[np.ndarray, pd.DataFrame, list]) -> np.ndarray:
         """
