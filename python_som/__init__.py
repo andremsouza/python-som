@@ -9,7 +9,7 @@ Features:
     - Linear weight initialization (with PCA)
     - Automatic selection of map size ratio (with PCA)
     - Support for cyclic arrays, for toroidal or spherical maps
-    - Gaussian and Bubble neighborhood functions
+    - Gaussian, Bubble and Mexican Hat neighborhood functions
     - Support for custom decay functions
     - Support for visualization (U-matrix, activation matrix)
     - Support for supervised learning (label map)
@@ -124,7 +124,7 @@ class SOM:
         - Linear weight initialization (with PCA)
         - Automatic selection of map size ratio (with PCA)
         - Support for cyclic arrays, for toroidal or spherical maps
-        - Gaussian and Bubble neighborhood functions
+        - Gaussian, Bubble and Mexican hat neighborhood functions
         - Support for custom decay functions
         - Support for visualization (U-matrix, activation matrix)
         - Support for supervised learning (label map)
@@ -190,7 +190,7 @@ class SOM:
             variable. May be a predefined one from this package, or a custom function, with the
             same parameters and return type. Defaults to _asymptotic_decay
         :param neighborhood_function: str: Neighborhood function name for the training process.
-            May be either 'gaussian' or 'bubble'.
+            May be either 'gaussian', 'bubble' or 'mexicanhat'.
         :param distance_function: function: Function for calculating distances/dissimilarities
             between models of the network.
             May be a predefined one from this package, or a custom function, with the same
@@ -245,6 +245,7 @@ class SOM:
         self._neighborhood_function = {
             "gaussian": self._gaussian,
             "bubble": self._bubble,
+            "mexicanhat": self._mexicanhat,
         }[neighborhood_function]
         self._distance_function = distance_function
         self._cyclic = (bool(cyclic_x), bool(cyclic_y))
@@ -812,6 +813,29 @@ class SOM:
                 ay[: int((c[1] + sigma) % self._shape[1] + 1)] = True
 
         return np.outer(ax, ay).astype(int)
+
+    def _mexicanhat(self, c: tuple[int, ...], sigma: float) -> np.ndarray:
+        """
+        Mexican Hat neighborhood function, centered in c. Has support for cyclic arrays.
+
+        :param c: (int, int): Center coordinates for mexican hat function.
+        :param sigma: float: Spread variable for mexican hat function.
+        :return: np.ndarray: Mexican Hat, centered in c, over all the weights of the network.
+        """
+        # Calculate coefficient with sigma
+        d = 2 * sigma * sigma
+        # Calculate vertical and horizontal distances
+        dx = self._neigx - c[0]
+        dy = self._neigy - c[1]
+        # If using cyclic arrays, perform fold back distance
+        if self._cyclic[0]:
+            dx[dx > self._shape[0] / 2] -= self._shape[0]
+        if self._cyclic[1]:
+            dy[dy > self._shape[1] / 2] -= self._shape[1]
+        # Calculate mexican hat centered in c
+        ax = (1-np.power(dx, 2)/(sigma**2))*np.exp(-np.power(dx, 2) / d)
+        ay = (1-np.power(dy, 2)/(sigma**2))*np.exp(-np.power(dy, 2) / d)
+        return np.outer(ax, ay)
 
     def _data_to_numpy(self, data: np.ndarray | pd.DataFrame | list) -> np.ndarray:
         """

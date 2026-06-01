@@ -11,7 +11,7 @@ Most features were implemented using NumPy, with Scikit-learn for standardizatio
 * Linear weight initialization (with PCA)
 * Automatic selection of map size ratio (with PCA)
 * Support for cyclic arrays, for toroidal or spherical maps
-* Gaussian and Bubble neighborhood functions
+* Gaussian, Bubble and Mexican hat neighborhood functions
 * Support for custom decay functions
 * Support for visualization (U-matrix, activation matrix)
 * Support for supervised learning (label map)
