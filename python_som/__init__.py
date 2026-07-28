@@ -9,7 +9,7 @@ Features:
     - Linear weight initialization (with PCA)
     - Automatic selection of map size ratio (with PCA)
     - Support for cyclic arrays, for toroidal or spherical maps
-    - Gaussian and Bubble neighborhood functions
+    - Gaussian, Bubble and Mexican Hat neighborhood functions
     - Support for custom decay functions
     - Support for visualization (U-matrix, activation matrix)
     - Support for supervised learning (label map)
@@ -124,7 +124,7 @@ class SOM:
         - Linear weight initialization (with PCA)
         - Automatic selection of map size ratio (with PCA)
         - Support for cyclic arrays, for toroidal or spherical maps
-        - Gaussian and Bubble neighborhood functions
+        - Gaussian, Bubble and Mexican hat neighborhood functions
         - Support for custom decay functions
         - Support for visualization (U-matrix, activation matrix)
         - Support for supervised learning (label map)
@@ -190,7 +190,7 @@ class SOM:
             variable. May be a predefined one from this package, or a custom function, with the
             same parameters and return type. Defaults to _asymptotic_decay
         :param neighborhood_function: str: Neighborhood function name for the training process.
-            May be either 'gaussian' or 'bubble'.
+            May be either 'gaussian', 'bubble' or 'mexicanhat'.
         :param distance_function: function: Function for calculating distances/dissimilarities
             between models of the network.
             May be a predefined one from this package, or a custom function, with the same
@@ -242,10 +242,19 @@ class SOM:
         self._learning_rate_decay = learning_rate_decay
         self._neighborhood_radius = float(neighborhood_radius)
         self._neighborhood_radius_decay = neighborhood_radius_decay
-        self._neighborhood_function = {
+        neighborhood_functions = {
             "gaussian": self._gaussian,
             "bubble": self._bubble,
-        }[neighborhood_function]
+            "mexicanhat": self._mexicanhat,
+        }
+        try:
+            self._neighborhood_function = neighborhood_functions[neighborhood_function]
+        except KeyError as exc:
+            raise ValueError(
+                "Invalid value for 'neighborhood_function' parameter. Value should be in "
+                + str(list(neighborhood_functions.keys()))
+            ) from exc
+        self._neighborhood_function_name = neighborhood_function
         self._distance_function = distance_function
         self._cyclic = (bool(cyclic_x), bool(cyclic_y))
         self._neigx, self._neigy = np.arange(self._shape[0]), np.arange(self._shape[1])
@@ -484,6 +493,18 @@ class SOM:
         elif mode == "sequential":
             self._train_sequential(data_array, n_iteration, verbose)
         elif mode == "batch":
+            if self._neighborhood_function_name == "mexicanhat":
+                # The batch update of Kohonen (2013), Eq. (8), is a weighted mean whose denominator
+                # is sum_j n_j * h_ji. That is only well defined for a non-negative neighborhood
+                # function. The mexican hat is signed by construction, so the denominator can vanish
+                # or turn negative, which makes the update blow up or invert the sign of the
+                # correction. Use a stepwise mode instead.
+                raise ValueError(
+                    "The 'mexicanhat' neighborhood function cannot be used with the 'batch'"
+                    " training mode: the weighted mean of Kohonen (2013), Eq. (8), is undefined"
+                    " for a neighborhood function that takes negative values, as its denominator"
+                    " is not sign-definite. Use mode='random' or mode='sequential' instead."
+                )
             self._train_batch(data_array, n_iteration, verbose)
         else:
             # Invalid training mode value
@@ -641,7 +662,7 @@ class SOM:
     def weight_initialization(
         self,
         mode: str = "random",
-        **kwargs: np.ndarray | pd.DataFrame | list | str | int
+        **kwargs: np.ndarray | pd.DataFrame | list | str | int,
     ) -> None:
         """Function for weight initialization of the self-organizing map.
 
@@ -758,28 +779,70 @@ class SOM:
         )
         self._weights = data_array[sample].reshape(self._weights.shape)
 
+    @staticmethod
+    def _axis_offsets(
+        coords: np.ndarray, center: int, length: float, cyclic: bool
+    ) -> np.ndarray:
+        """
+        Signed offsets from 'center' to each coordinate along one axis of the grid.
+
+        When the axis is cyclic, the minimum-image convention is applied, i.e., each offset is
+        folded into the interval [-length/2, length/2), so that the shortest way around the torus
+        is used. Both tails must be folded: an offset of -9 on an axis of length 10 represents a
+        distance of 1, not 9.
+
+        :param coords: np.ndarray: Coordinates along the axis, i.e., np.arange(length).
+        :param center: int: Coordinate of the center (winner node) along the axis.
+        :param length: float: Number of nodes along the axis.
+        :param cyclic: bool: Whether the axis wraps around.
+        :return: np.ndarray: Signed offsets from center to each coordinate.
+        """
+        d = coords - center
+        if cyclic:
+            d = (d + length / 2) % length - length / 2
+        return d
+
+    def _sqdist(self, c: tuple[int, ...], sigma: float) -> np.ndarray:
+        """
+        Squared geometric distance from the center c to every node of the grid.
+
+        This is the sqdist(c, i) term of Kohonen (2013), Eq. (5). Every neighborhood function must
+        be a function of this scalar quantity: the neighborhood describes lateral interaction over
+        a metric space, so it depends on the distance between two nodes and not on the individual
+        axis offsets. Only the gaussian is separable into a product of per-axis terms, and that is
+        a property of the exponential rather than of neighborhood functions in general.
+
+        :param c: (int, int): Center coordinates.
+        :param sigma: float: Spread variable, validated here for all neighborhood functions.
+        :return: np.ndarray: Squared distances from c to each node, with the shape of the network.
+        :raises ValueError: If sigma is not strictly positive.
+        """
+        if not np.isfinite(sigma) or sigma <= 0:
+            raise ValueError(
+                "The neighborhood radius 'sigma' must be a finite positive number, got "
+                + str(sigma)
+            )
+        dx = self._axis_offsets(
+            self._neigx, c[0], float(self._shape[0]), self._cyclic[0]
+        )
+        dy = self._axis_offsets(
+            self._neigy, c[1], float(self._shape[1]), self._cyclic[1]
+        )
+        return np.add.outer(np.power(dx, 2), np.power(dy, 2))
+
     def _gaussian(self, c: tuple[int, ...], sigma: float) -> np.ndarray:
         """
         Gaussian neighborhood function, centered in c. Has support for cyclic arrays.
 
+        Implements h_ci = exp(-sqdist(c, i) / (2 * sigma^2)), i.e., Eq. (5) of Kohonen (2013)
+        with the learning rate factored out, so that h_cc = 1.
+
         :param c: (int, int): Center coordinates for gaussian function.
-        :param sigma: float: Spread variable for gaussian function.
+        :param sigma: float: Spread variable for gaussian function. Must be positive.
         :return: np.ndarray: Gaussian, centered in c, over all the weights of the network.
+        :raises ValueError: If sigma is not strictly positive.
         """
-        # Calculate coefficient with sigma
-        d = 2 * sigma * sigma
-        # Calculate vertical and horizontal distances
-        dx = self._neigx - c[0]
-        dy = self._neigy - c[1]
-        # If using cyclic arrays, perform fold back distance
-        if self._cyclic[0]:
-            dx[dx > self._shape[0] / 2] -= self._shape[0]
-        if self._cyclic[1]:
-            dy[dy > self._shape[1] / 2] -= self._shape[1]
-        # Calculate gaussian centered in c
-        ax = np.exp(-np.power(dx, 2) / d)
-        ay = np.exp(-np.power(dy, 2) / d)
-        return np.outer(ax, ay)
+        return np.exp(-self._sqdist(c, sigma) / (2 * sigma * sigma))
 
     def _bubble(self, c: tuple[int, ...], sigma: float) -> np.ndarray:
         """
@@ -788,10 +851,26 @@ class SOM:
         The neighbors of c are the nodes in the region of sigma positions in the vertical
         and horizontal directions around c.
 
+        This is the truncated inner, excitatory lobe of the mexican hat lateral-interaction
+        function; cf. Vrieze (1995), p. 85: "In Kohonen networks usually only the inner stimulation
+        area is used, i.e., when a neuron i fires, a positive feedback takes place for all neurons
+        i', whose distance to i is smaller than some given number rho."
+
+        Unlike the other neighborhood functions, a radius of zero is admissible here: it selects
+        the winner alone, which is well defined, whereas for the gaussian and the mexican hat a
+        zero radius is a division by zero.
+
         :param c: (int, int): Center coordinates for gaussian function.
-        :param sigma: float: Spread variable for gaussian function.
+        :param sigma: float: Spread variable for gaussian function. Must be finite and
+            non-negative.
         :return: np.ndarray: Neighborhood matrix, centered in c.
+        :raises ValueError: If sigma is negative or not finite.
         """
+        if not np.isfinite(sigma) or sigma < 0:
+            raise ValueError(
+                "The neighborhood radius 'sigma' must be a finite non-negative number, got "
+                + str(sigma)
+            )
         # Convert sigma to integer
         sigma = int(np.around(sigma))
 
@@ -812,6 +891,46 @@ class SOM:
                 ay[: int((c[1] + sigma) % self._shape[1] + 1)] = True
 
         return np.outer(ax, ay).astype(int)
+
+    def _mexicanhat(self, c: tuple[int, ...], sigma: float) -> np.ndarray:
+        """
+        Mexican Hat neighborhood function, centered in c. Has support for cyclic arrays.
+
+        Also known as the Ricker wavelet, or the Laplacian of Gaussian. This is the biologically
+        motivated lateral-interaction function: nodes near the winner are excited, nodes beyond a
+        certain distance are inhibited, and the inhibition vanishes as the distance grows further
+        (Vrieze, 1995, Fig. 3).
+
+        Implements the isotropic 2-D form as a function of u = sqdist(c, i) / (2 * sigma^2):
+
+            h_ci = (1 - u) * exp(-u)
+
+        normalized so that h_cc = 1. It crosses zero at a radius of sqrt(2) * sigma, reaches its
+        minimum of -exp(-2) ~= -0.135 at a radius of 2 * sigma, and decays to zero thereafter.
+
+        Note that this is *not* the outer product of two 1-D Ricker wavelets. Unlike the gaussian,
+        the Ricker wavelet is not multiplicatively separable, and such a product is not a function
+        of the distance between two nodes: it would be positive in the diagonal quadrants, where
+        both 1-D factors are negative, placing a spurious excitatory lobe exactly where the
+        function must inhibit. The neighborhood function must depend on the grid distance alone,
+        cf. sqdist(c, i) in Kohonen (2013), Eq. (5), and the "lateral distance" abscissa of
+        Vrieze (1995), Fig. 3.
+
+        The '_bubble' neighborhood function is the truncated inner (excitatory) lobe of this same
+        lateral-interaction function; cf. Vrieze (1995), p. 85.
+
+        :param c: (int, int): Center coordinates for mexican hat function.
+        :param sigma: float: Spread variable for mexican hat function. Must be positive.
+        :return: np.ndarray: Mexican Hat, centered in c, over all the weights of the network.
+        :raises ValueError: If sigma is not strictly positive.
+
+        References:
+        O. J. Vrieze, Kohonen network, in: Artificial Neural Networks: An Introduction to ANN
+        Theory and Practice, Lecture Notes in Computer Science, vol. 931, Springer, 1995,
+        pp. 83-100, https://doi.org/10.1007/BFb0027024.
+        """
+        u = self._sqdist(c, sigma) / (2 * sigma * sigma)
+        return (1.0 - u) * np.exp(-u)
 
     def _data_to_numpy(self, data: np.ndarray | pd.DataFrame | list) -> np.ndarray:
         """
