@@ -108,6 +108,22 @@ The following are lists of public methods and functions currently available in t
 * SOM.train
 * SOM.weight_initialization
 
+## Neighborhood functions
+The `neighborhood_function` parameter selects how the winner's correction is spread over the grid.
+All three are functions of the distance between two nodes in the grid, `sqdist(c, i)` in Eq. (5) of
+Kohonen (2013):
+
+| Name | Shape | Notes |
+| --- | --- | --- |
+| `'gaussian'` | `exp(-r² / 2σ²)` | Strictly positive and monotonically decreasing. The default. |
+| `'bubble'` | `1` for `r ≤ σ`, else `0` | The truncated inner lobe of the mexican hat. Vrieze (1995) notes this flat choice is "just as effective and sometimes even better". |
+| `'mexicanhat'` | `(1 - u)·exp(-u)`, `u = r² / 2σ²` | Excitatory near the winner, inhibitory beyond it. Crosses zero at `r = √2·σ`, reaches its minimum of `-e⁻² ≈ -0.135` at `r = 2σ`. |
+
+The mexican hat takes negative values, so it **cannot be used with `mode='batch'`**: the batch update
+of Kohonen (2013), Eq. (8), is a weighted mean whose denominator `Σⱼ nⱼ·hⱼᵢ` is not sign-definite for
+a signed neighborhood function. Use `mode='random'` or `mode='sequential'` instead; passing
+`mode='batch'` raises a `ValueError`.
+
 ## References
 This implemetation was based on the following paper, by Professor Teuvo Kohonen:
 
@@ -119,3 +135,14 @@ Volume 37,
 Pages 52-65,
 ISSN 0893-6080,
 https://doi.org/10.1016/j.neunet.2012.09.018.
+
+The mexican hat neighborhood function follows the lateral-interaction formulation in:
+
+O. J. Vrieze,
+Kohonen network,
+in: Artificial Neural Networks: An Introduction to ANN Theory and Practice,
+Lecture Notes in Computer Science, Volume 931,
+Springer, Berlin, Heidelberg,
+1995,
+Pages 83-100,
+https://doi.org/10.1007/BFb0027024.
