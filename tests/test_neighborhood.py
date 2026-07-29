@@ -16,7 +16,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from python_som._neighborhood import (
+from python_som._core._neighborhood import (
     NEIGHBORHOOD_FUNCTIONS,
     NeighborhoodFunction,
     axis_offsets,

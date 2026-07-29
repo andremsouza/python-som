@@ -5,6 +5,41 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The package is now a pure functional core with a thin shell around it. `python_som._core` holds
+  every numeric decision as functions over NumPy arrays and imports nothing but NumPy;
+  `python_som._convert` adapts pandas at the boundary; `python_som._som` keeps the state, the
+  validation and the training loops. **No public name, signature or numerical result changes** —
+  trained weights are bit-identical to 0.3.0 for every combination of training mode and neighborhood
+  function, which is asserted rather than assumed.
+
+  The boundary is machine-checked, not merely documented: ruff's `TID251` bans pandas and scikit-learn
+  outside the two shell modules that exist to adapt them, and reports the reason at the point of
+  violation. `architecture-profile.toml` records the style.
+
+- The two update rules are now pure functions returning new arrays. An earlier note claimed this was
+  also faster; **it is not**, and the claim is withdrawn. Measured with interleaved arms and medians,
+  the pure form is about 10% slower on small maps and indistinguishable above roughly 100x100. The
+  cost buys functions testable without constructing a network, and is single-digit milliseconds over a
+  10,000-iteration run on a 20x20 map. `benchmarks/bench_update.py` is the corrected measurement.
+
+### Fixed
+
+- `_train_stepwise` looked up `array[index]` twice per iteration, allocating the sample twice on the
+  hot loop. Found by profiling the refactor rather than by reading it.
+
+### Removed
+
+- The batch denominator's `1e-12` tolerance, replaced by `> 0`. The constant had no source, and it
+  guarded a condition that cannot occur: every term of `sum_j n_j h_ji` is non-negative, because
+  batch training rejects signed neighborhoods and only registered names resolve, so a sum of
+  non-negative floats is zero exactly when every term is zero. The 0.3.0 entry below describes it as
+  "compared against a tolerance rather than exact zero"; that was the right instinct applied to a
+  problem that was not there.
+
 ## [0.3.0] - 2026-07-29
 
 Modernizes the packaging and corrects four methodology defects. **Numerical results differ from

@@ -61,19 +61,20 @@ def test_stepwise_runs_the_requested_number_of_iterations(
     ran 30 steps while the decay functions still used 500 as their horizon.
     """
     som = make_som(x=6, y=6)
-    calls = 0
-    original = som.winner
+    steps = 0
+    original = som._sigma
 
-    def counting_winner(x: np.ndarray) -> tuple[int, int]:
-        nonlocal calls
-        calls += 1
-        return original(x)
+    def counting_sigma(t: int, n: int) -> float:
+        nonlocal steps
+        steps += 1
+        return original(t, n)
 
-    monkeypatch.setattr(som, "winner", counting_winner)
+    # _sigma is called exactly once per training step and nowhere else, so it counts iterations
+    # without depending on how the winner lookup is routed internally.
+    monkeypatch.setattr(som, "_sigma", counting_sigma)
     requested = 137
     som.train(blobs, n_iteration=requested, mode=mode)
-    # each training step calls winner() once; quantization_error() then calls it once per sample
-    assert calls - len(blobs) == requested
+    assert steps == requested
 
 
 def test_sequential_cycles_through_the_dataset(blobs: np.ndarray) -> None:

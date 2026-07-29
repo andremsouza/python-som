@@ -1,0 +1,275 @@
+"""The properties that make the functional core a core, rather than just a folder.
+
+These are architecture tests. They fail if a later change reintroduces a dependency, an invented
+tolerance, or an in-place update, none of which a linter would catch on its own.
+"""
+
+from __future__ import annotations
+
+import ast
+import importlib
+import pathlib
+import pkgutil
+
+import numpy as np
+import pytest
+
+import python_som
+from python_som._core import _update
+from python_som._core._neighborhood import gaussian
+from tests.conftest import MODEL_SEED, make_som
+
+#: The core package on disk, scanned rather than imported.
+_CORE = pathlib.Path(python_som.__file__).parent / "_core"
+
+
+# ---------------------------------------------------------------------------------------------
+# The dependency boundary
+# ---------------------------------------------------------------------------------------------
+
+
+def _imports_of(path: pathlib.Path) -> set[str]:
+    """Return the top-level package names imported by one module, from its AST.
+
+    :param path: Module to inspect.
+    :return: Top-level names of everything it imports.
+    """
+    found: set[str] = set()
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.Import):
+            found |= {alias.name.split(".")[0] for alias in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            found.add(node.module.split(".")[0])
+    return found
+
+
+def test_no_core_module_imports_pandas() -> None:
+    """The dependency direction, asserted independently of ruff.
+
+    Deliberately an AST scan rather than a check of ``sys.modules``. Importing
+    ``python_som._core`` necessarily imports the parent package first, whose ``__init__`` reaches
+    the shell and therefore pandas; that is correct, and a runtime check would flag it. What matters
+    is that no module *inside* the core names pandas, which is what this measures.
+
+    ruff's ``TID251`` enforces the same rule, so this is belt and braces. It is worth having because
+    a ``per-file-ignores`` entry added later would silence ruff without failing anything.
+    """
+    offenders = {
+        path.name: sorted(_imports_of(path) & {"pandas"})
+        for path in _CORE.glob("*.py")
+        if _imports_of(path) & {"pandas"}
+    }
+    assert not offenders, f"the core must not import pandas: {offenders}"
+
+
+def test_sklearn_appears_in_exactly_one_core_module() -> None:
+    """``_linalg`` is the only place sklearn is reached, and PR #8 replaces it with numpy.
+
+    Pinning it to one module is what makes that removal a single-file change rather than a hunt.
+    """
+    users = sorted(p.name for p in _CORE.glob("*.py") if "sklearn" in _imports_of(p))
+    assert users == ["_linalg.py"], users
+
+
+def test_every_core_module_is_importable() -> None:
+    """A module that no longer imports is a broken boundary, not a missing test."""
+    package = python_som._core
+    found = [name for _, name, _ in pkgutil.iter_modules(package.__path__)]
+    assert len(found) >= 8, f"expected the full core, found {found}"
+    for name in found:
+        importlib.import_module(f"python_som._core.{name}")
+
+
+# ---------------------------------------------------------------------------------------------
+# The batch denominator: no invented tolerance
+# ---------------------------------------------------------------------------------------------
+
+
+def test_batch_denominator_needs_no_epsilon() -> None:
+    """Regression for an invented constant that 0.3.0 shipped.
+
+    The guard was ``abs(denominator) > 1e-12``, a number with no source. It is unnecessary: every
+    term of ``sum_j n_j h_ji`` is non-negative, because batch training rejects signed neighborhoods
+    and a caller cannot supply an arbitrary one. A sum of non-negative floats admits no
+    cancellation, so it is zero exactly when every term is zero.
+
+    This asserts the mathematical premise the simplification rests on, so that if a future change
+    lets a signed neighborhood reach the batch update, this fails rather than the update silently
+    dividing by noise.
+    """
+    assert "TOLERANCE" not in dir(_update)
+    assert not any("1e-12" in str(v) for v in vars(_update).values() if isinstance(v, float))
+
+    shape = (9, 7)
+    for radius in (0.5, 1.0, 3.0, 10.0):
+        h = gaussian(shape, (4, 3), radius, (False, False))
+        assert (h >= 0).all(), "the gaussian must be non-negative for the premise to hold"
+
+
+def test_batch_update_leaves_unreached_models_untouched() -> None:
+    """A denominator of exactly zero means no data in reach, so the model is kept."""
+    shape = (4, 4)
+    weights = np.arange(4 * 4 * 2, dtype=float).reshape((*shape, 2))
+    sums = np.zeros((*shape, 2))
+    counts = np.zeros(shape)  # no data anywhere
+    result = _update.batch_update(
+        weights, sums, counts, lambda node: gaussian(shape, node, 1.0, (False, False)), shape
+    )
+    np.testing.assert_array_equal(result, weights)
+
+
+def test_batch_update_returns_a_new_array() -> None:
+    """The update is pure: the caller's array must be untouched."""
+    shape = (3, 3)
+    weights = np.ones((*shape, 2))
+    original = weights.copy()
+    counts = np.ones(shape)
+    sums = np.full((*shape, 2), 5.0)
+    result = _update.batch_update(
+        weights, sums, counts, lambda node: gaussian(shape, node, 1.0, (False, False)), shape
+    )
+    assert result is not weights
+    np.testing.assert_array_equal(weights, original)
+
+
+# ---------------------------------------------------------------------------------------------
+# The stepwise update: pure, and identical to the in-place form it replaced
+# ---------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("shape", [(3, 3), (12, 8), (20, 20)])
+@pytest.mark.parametrize("alpha", [0.05, 0.5, 1.0])
+def test_pure_stepwise_update_equals_the_in_place_form_exactly(
+    shape: tuple[int, int], alpha: float
+) -> None:
+    """Equality at 0.0, not a tolerance: the expression is the same, only the destination differs.
+
+    0.3.0 wrote ``weights += alpha * h[..., None] * (sample - weights)``. If the pure form differed
+    at all, every trained map would shift.
+    """
+    rng = np.random.default_rng(MODEL_SEED)
+    weights = rng.normal(size=(*shape, 4))
+    sample = rng.normal(size=4)
+    h = gaussian(shape, (shape[0] // 2, shape[1] // 2), 2.0, (False, False))
+
+    in_place = weights.copy()
+    in_place += alpha * h[..., None] * (sample - in_place)
+    pure = _update.stepwise_update(weights, sample, h, alpha)
+
+    assert np.abs(pure - in_place).max() == 0.0
+
+
+def test_stepwise_update_returns_a_new_array() -> None:
+    rng = np.random.default_rng(MODEL_SEED)
+    weights = rng.normal(size=(4, 4, 2))
+    original = weights.copy()
+    h = gaussian((4, 4), (2, 2), 1.0, (False, False))
+    result = _update.stepwise_update(weights, rng.normal(size=2), h, 0.3)
+    assert result is not weights
+    np.testing.assert_array_equal(weights, original)
+
+
+def test_a_signed_neighborhood_moves_models_away() -> None:
+    """The inhibitory half of the mexican hat, asserted directly rather than inferred."""
+    shape = (3, 3)
+    weights = np.zeros((*shape, 1))
+    sample = np.array([10.0])
+    h = np.full(shape, -0.5)  # wholly inhibitory
+    result = _update.stepwise_update(weights, sample, h, 1.0)
+    assert (result < 0).all(), "a negative neighborhood must push models away from the sample"
+
+
+# ---------------------------------------------------------------------------------------------
+# The public surface is unchanged by the split
+# ---------------------------------------------------------------------------------------------
+
+
+def test_public_surface_is_exactly_what_0_3_0_shipped() -> None:
+    """The module split must not add or remove a single public name."""
+    assert sorted(python_som.__all__) == [
+        "NEIGHBORHOOD_FUNCTIONS",
+        "SIGNED_NEIGHBORHOODS",
+        "SOM",
+        "asymptotic_decay",
+        "bubble",
+        "euclidean_distance",
+        "exponential_decay",
+        "gaussian",
+        "inverse_decay",
+        "linear_decay",
+        "mexican_hat",
+    ]
+
+
+def test_som_public_methods_are_exactly_what_0_3_0_shipped() -> None:
+    """Sixteen methods, named as they were before the split."""
+    import inspect  # noqa: PLC0415
+
+    public = sorted(
+        name
+        for name, _ in inspect.getmembers(python_som.SOM, inspect.isfunction)
+        if not name.startswith("_")
+    )
+    assert public == [
+        "activate",
+        "activation_matrix",
+        "distance_matrix",
+        "get_random_seed",
+        "get_shape",
+        "get_weights",
+        "label_map",
+        "neighborhood",
+        "quantization",
+        "quantization_error",
+        "set_learning_rate",
+        "set_neighborhood_radius",
+        "train",
+        "weight_initialization",
+        "winner",
+        "winner_map",
+    ]
+
+
+# ---------------------------------------------------------------------------------------------
+# Initialization errors name the argument, not a private function
+# ---------------------------------------------------------------------------------------------
+
+
+def test_missing_data_argument_names_the_argument() -> None:
+    """0.3.0 raised ``TypeError: SOM._init_random() got an unexpected keyword argument``.
+
+    That leaked a private method name and did not say what the caller should do.
+    """
+    som = make_som(x=4, y=4)
+    for mode in ("linear", "sample"):
+        with pytest.raises(ValueError, match=f"{mode!r} initialization requires"):
+            som.weight_initialization(mode=mode)
+
+
+def test_unexpected_argument_names_the_argument() -> None:
+    som = make_som(x=4, y=4)
+    with pytest.raises(ValueError, match="Unexpected argument"):
+        som.weight_initialization(mode="random", data=np.zeros((4, 2)))
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        ({"mode": "linear"}, "initialization requires"),
+        ({"mode": "random", "nonsense": 1}, "Unexpected argument"),
+        ({"mode": "spectral"}, "Invalid value for 'mode' parameter"),
+    ],
+    ids=["missing-data", "unexpected-kwarg", "unknown-mode"],
+)
+def test_error_messages_never_leak_a_private_name(kwargs: dict[str, object], expected: str) -> None:
+    """A caller should never be shown ``_init_random`` or ``_som``.
+
+    Each case pins the message it expects as well, so this cannot pass by raising the wrong error
+    for the right reason.
+    """
+    som = make_som(x=4, y=4)
+    with pytest.raises(ValueError, match=expected) as excinfo:
+        som.weight_initialization(**kwargs)  # type: ignore[arg-type]
+    message = str(excinfo.value)
+    assert "_init_" not in message, message
+    assert "_som" not in message, message

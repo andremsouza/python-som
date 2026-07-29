@@ -17,13 +17,22 @@ settings.register_profile("ci", derandomize=True, max_examples=50, deadline=None
 settings.register_profile("dev", max_examples=25, deadline=None)
 settings.load_profile("ci")
 
-SEED = 20260728
+# Distinct seeds for the data and the models, deliberately. With one shared seed both are drawn
+# from the same `default_rng` stream, so a SOM's initial models and the samples come out as the
+# same numbers: with a raw `rng.normal` draw, every sample lands exactly on a model and the
+# untrained quantization error is 0.0. Nothing was wrong in the assertions that relied on it, but
+# it is a degenerate starting state that could let a future one pass for the wrong reason.
+DATA_SEED = 20260728
+MODEL_SEED = 20260729
+
+#: Retained for the tests that only need "a" seed and do not care which stream it belongs to.
+SEED = MODEL_SEED
 
 
 @pytest.fixture
 def rng() -> np.random.Generator:
     """Return a seeded generator, so every test that draws data is reproducible."""
-    return np.random.default_rng(SEED)
+    return np.random.default_rng(DATA_SEED)
 
 
 @pytest.fixture
@@ -48,7 +57,7 @@ def frame(blobs: npt.NDArray[np.floating]) -> pd.DataFrame:
 @pytest.fixture
 def som() -> python_som.SOM:
     """Return a small seeded map with the default gaussian neighborhood."""
-    return python_som.SOM(x=8, y=6, input_len=3, random_seed=SEED)
+    return python_som.SOM(x=8, y=6, input_len=3, random_seed=MODEL_SEED)
 
 
 def make_som(**kwargs: Any) -> python_som.SOM:  # noqa: ANN401
@@ -61,7 +70,7 @@ def make_som(**kwargs: Any) -> python_som.SOM:  # noqa: ANN401
         "x": 21,
         "y": 21,
         "input_len": 3,
-        "random_seed": SEED,
+        "random_seed": MODEL_SEED,
     }
     params.update(kwargs)
     return python_som.SOM(**params)
