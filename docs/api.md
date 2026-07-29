@@ -7,7 +7,7 @@
 
 ## Neighborhood functions
 
-::: python_som._neighborhood
+::: python_som._core._neighborhood
     options:
       members:
         - gaussian
@@ -19,8 +19,8 @@
 
 ## Decay functions
 
-::: python_som._decay
+::: python_som._core._decay
 
 ## Distance functions
 
-::: python_som._distance
+::: python_som._core._distance
