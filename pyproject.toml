@@ -44,6 +44,8 @@ dev = [
     "pytest==9.1.1",
     "pytest-cov==7.1.0",
     "ruff==0.16.0",
+    # tomllib entered the stdlib in 3.11; tomli is the backport it was derived from.
+    "tomli==2.4.1; python_version < '3.11'",
     "twine==7.0.0",
     "types-tqdm==4.69.0.20260728",
 ]

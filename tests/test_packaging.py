@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import pathlib
+import sys
 from importlib.metadata import metadata, version
 from typing import Any
 
 import pytest
-import tomllib
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover
+    import tomli as tomllib
 
 import python_som
 
