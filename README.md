@@ -1,131 +1,123 @@
 # python-som
 
-Implementation of the 2D self-organizing map, with support for NumPy arrays and Pandas DataFrames.
-Most features were implemented using NumPy, with Scikit-learn for standardization and PCA operations.
+[![CI](https://github.com/andremsouza/python-som/actions/workflows/ci.yml/badge.svg)](https://github.com/andremsouza/python-som/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/python-som.svg)](https://pypi.org/project/python-som/)
+[![Python versions](https://img.shields.io/pypi/pyversions/python-som.svg)](https://pypi.org/project/python-som/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/andremsouza/python-som/blob/master/LICENSE)
+
+Implementation of Kohonen's 2-D self-organizing map, built on NumPy, with scikit-learn for PCA and
+standardization. Accepts NumPy arrays, pandas DataFrames and plain lists.
+
+**[Documentation](https://andremsouza.github.io/python-som/)** ·
+**[Changelog](https://github.com/andremsouza/python-som/blob/master/CHANGELOG.md)**
+
+## Install
+
+```bash
+pip install python-som              # requires Python 3.10+
+pip install "python-som[cli]"       # adds tqdm progress bars
+```
+
+## Quick start
+
+```python
+import numpy as np
+import python_som
+
+rng = np.random.default_rng(0)
+data = rng.normal(size=(150, 4))
+
+som = python_som.SOM(x=20, y=None, input_len=4, data=data, random_seed=42)
+som.weight_initialization(mode="linear", data=data)
+error = som.train(data, n_iteration=len(data), mode="batch")
+
+umatrix = som.distance_matrix()
+winner = som.winner(data[0])
+```
+
+A full worked example with plots is in [examples/iris.py](https://github.com/andremsouza/python-som/blob/master/examples/iris.py) and in the
+[getting-started guide](https://andremsouza.github.io/python-som/getting-started/).
+
+![U-matrix of a SOM trained on Iris](https://raw.githubusercontent.com/andremsouza/python-som/master/docs/assets/iris.png)
 
 ## Features
 
 * Stepwise and batch training
-* Random weight initialization
-* Random sampling weight initialization
-* Linear weight initialization (with PCA)
-* Automatic selection of map size ratio (with PCA)
-* Support for cyclic arrays, for toroidal or spherical maps
-* Gaussian, Bubble and Mexican hat neighborhood functions
-* Support for custom decay functions
-* Support for visualization (U-matrix, activation matrix)
-* Support for supervised learning (label map)
-* Support for NumPy arrays, Pandas DataFrames and regular lists of values
-
-## Usage
-In the following code excerpt (also available in [test.py](./test.py)) is an example of instantiation and training of a SOM with the Iris dataset:
-```python
-# Import python_som
-import python_som
-# Import NumPy and Pandas for storing data
-import numpy as np
-import pandas as pd
-# Import libraries for plotting results
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-# Load Iris dataset and columns of features and labels
-iris = sns.load_dataset('iris')
-target = iris.iloc[:, -1].to_numpy()
-iris = iris.iloc[:, :-1].to_numpy()
-# Transform labels into numeric codes for plotting
-tg = np.zeros(len(target), dtype=int)
-tg[target == 'setosa'] = 0
-tg[target == 'versicolor'] = 1
-tg[target == 'virginica'] = 2
-
-# Instantiate SOM from  python_som
-# Selecting shape automatically (providing dataset for constructor)
-# Using default decay and distance functions
-# Using gaussian neighborhood function
-# Using cyclic arrays in the vertical and horizontal directions
-som = python_som.SOM(x=20, y=None, input_len=iris.shape[1], learning_rate=0.5, neighborhood_radius=1.0,
-        neighborhood_function='gaussian', cyclic_x=True, cyclic_y=True, data=iris)
-
-# Initialize weights of the SOM with linear initialization
-som.weight_initialization(mode='linear', data=iris)
-
-# Training SOM with default number of iterations
-# Using batch learning process
-som.train(data=iris, n_iteration=len(iris), mode='batch', verbose=True)
-
-# Calculating distance matrix for plotting
-umatrix = som.distance_matrix().T
-
-# Plotting U-matrix with seaborn/matplotlib
-plt.figure(figsize=som.get_shape())
-plt.pcolor(umatrix, cmap='bone_r')
-
-markers = ['o', 's', 'D']
-colors = ['C0', 'C1', 'C2']
-for cnt, xx in enumerate(iris):
-    w = som.winner(xx)  # getting the winner
-    plt.plot(w[0] + .5, w[1] + .5, markers[tg[cnt]], markerfacecolor='None',
-             markeredgecolor=colors[tg[cnt]], markersize=12, markeredgewidth=2)
-plt.axis([0, som.get_shape()[0], 0, som.get_shape()[1]])
-plt.show()
-
-```
-
-### Test output
-The following image is generated from the previous test code, with the U-matrix of the trained SOM, and the distribution of the instances from the Iris dataset.
-In this graph, the instances are mapped to the self-organizing map, with color codes for each different label:
-* Setosa: blue circle
-* Versicolor: orange square
-* Virginica: green diamond
-
-![Test code output](./test_output_iris.png?raw=true)
-
-## Public methods and functions
-The following are lists of public methods and functions currently available in the SOM class. The full documentation of each method can be found in the [source code](./python_som/__init__.py):
-
-### Utility functions
-* _asymptotic_decay
-* _linear_decay
-* _exponential_decay
-* _inverse_decay
-* _euclidean_distance
-
-### SOM public methods
-* SOM
-* SOM.get_shape
-* SOM.get_weights
-* SOM.set_learning_rate
-* SOM.set_neighborhood_radius
-* SOM.activate
-* SOM.winner
-* SOM.quantization
-* SOM.quantization_error
-* SOM.distance_matrix
-* SOM.activation_matrix
-* SOM.winner_map
-* SOM.label_map
-* SOM.train
-* SOM.weight_initialization
+* Random, random-sampling and linear (PCA) weight initialization
+* Automatic selection of the map size ratio, from PCA
+* Cyclic arrays, for toroidal maps
+* Gaussian, bubble and Mexican hat neighborhood functions
+* Custom decay functions
+* Visualization support: U-matrix, activation matrix
+* Supervised labelling, via the label map
+* Fully type-annotated, with a `py.typed` marker
 
 ## Neighborhood functions
-The `neighborhood_function` parameter selects how the winner's correction is spread over the grid.
+
 All three are functions of the distance between two nodes in the grid, `sqdist(c, i)` in Eq. (5) of
-Kohonen (2013):
+Kohonen (2013).
 
 | Name | Shape | Notes |
 | --- | --- | --- |
-| `'gaussian'` | `exp(-r² / 2σ²)` | Strictly positive and monotonically decreasing. The default. |
-| `'bubble'` | `1` for `r ≤ σ`, else `0` | The truncated inner lobe of the mexican hat. Vrieze (1995) notes this flat choice is "just as effective and sometimes even better". |
-| `'mexicanhat'` | `(1 - u)·exp(-u)`, `u = r² / 2σ²` | Excitatory near the winner, inhibitory beyond it. Crosses zero at `r = √2·σ`, reaches its minimum of `-e⁻² ≈ -0.135` at `r = 2σ`. |
+| `'gaussian'` | `exp(-r² / 2σ²)` | Strictly positive, monotonically decreasing. The default. |
+| `'bubble'` | `1` for `max(dx, dy) ≤ σ`, else `0` | The truncated inner lobe of the Mexican hat. Uses the Chebyshev metric, so the region is a square. |
+| `'mexicanhat'` | `(1 - u)·exp(-u)`, `u = r² / 2σ²` | Excitatory near the winner, inhibitory beyond it. Zero at `r = √2·σ`, minimum `-e⁻²` at `r = 2σ`. |
 
-The mexican hat takes negative values, so it **cannot be used with `mode='batch'`**: the batch update
-of Kohonen (2013), Eq. (8), is a weighted mean whose denominator `Σⱼ nⱼ·hⱼᵢ` is not sign-definite for
-a signed neighborhood function. Use `mode='random'` or `mode='sequential'` instead; passing
-`mode='batch'` raises a `ValueError`.
+The Mexican hat takes negative values, so it **cannot be used with `mode='batch'`**: the batch
+update of Kohonen Eq. (8) is a weighted mean whose denominator is not sign-definite for a signed
+neighborhood function. Use `mode='random'` or `mode='sequential'`; `mode='batch'` raises a
+`ValueError`.
+
+See [Neighborhood functions](https://andremsouza.github.io/python-som/neighborhood-functions/) for
+the derivations, including why the Mexican hat is not an outer product of two 1-D wavelets.
+
+## Behavior changes in 0.3.0
+
+0.3.0 corrects several methodology defects. Each changes numerical output, so results are not
+comparable across the boundary.
+
+**Seeds no longer reproduce older results.** The random generator is now per-instance rather than a
+call to `np.random.seed` on NumPy's global state. That fixes a real side effect, since constructing
+a SOM used to reseed NumPy for the whole host program, but it means `random_seed=42` gives a
+different map. **To reproduce figures made with an earlier version, pin `python-som==0.2.0`.**
+
+Also changed:
+
+* **Batch training no longer destroys models** whose neighborhood contains no data. They previously
+  became the zero vector; on a 30×30 map with 20 samples, 282 of 900 models were wiped in one step.
+* **Linear initialization now spans the principal-component plane.** It used the eigen*values* where
+  it needed the eigen*vectors*, so every model came out as a constant vector. PCA is also now fitted
+  on raw data rather than standardized data, so the models share the input space.
+* **`sequential` mode honours `n_iteration`.** It previously ran one pass over the dataset whatever
+  you asked for.
+* **The automatic map-size ratio uses `√(λ₁/λ₂)`** rather than the raw eigenvalue ratio, and rounds
+  rather than floor-dividing, so a side length can no longer come out as zero.
+* **The neighborhood radius is floored** at `min_neighborhood_radius` (default 0.5), per Kohonen
+  Section 4.2.
+* **`get_shape()` returns `tuple[int, int]`** instead of NumPy integers, so `figsize=som.get_shape()`
+  works.
+* **`requires-python` is `>=3.10`**, which is what the code actually needs.
+
+The full list, with citations, is in the [changelog](https://github.com/andremsouza/python-som/blob/master/CHANGELOG.md).
+
+## Development
+
+```bash
+uv sync --all-extras
+uv run pytest --cov          # tests and coverage
+uv run ruff check .          # lint
+uv run ruff format --check . # formatting
+uv run mypy                  # type-check
+uv run mkdocs serve          # docs, locally
+pre-commit install           # optional, run the gates on commit
+```
+
+If you use the SonarQube for IDE (SonarLint) VS Code extension, it will also apply Sonar's Python
+rules locally; the ruff configuration is set up to cover most of the same ground.
 
 ## References
-This implemetation was based on the following paper, by Professor Teuvo Kohonen:
+
+Based on:
 
 Teuvo Kohonen,
 Essentials of the self-organizing map,
@@ -134,9 +126,9 @@ Volume 37,
 2013,
 Pages 52-65,
 ISSN 0893-6080,
-https://doi.org/10.1016/j.neunet.2012.09.018.
+<https://doi.org/10.1016/j.neunet.2012.09.018>
 
-The mexican hat neighborhood function follows the lateral-interaction formulation in:
+The Mexican hat neighborhood follows the lateral-interaction formulation in:
 
 O. J. Vrieze,
 Kohonen network,
@@ -145,4 +137,8 @@ Lecture Notes in Computer Science, Volume 931,
 Springer, Berlin, Heidelberg,
 1995,
 Pages 83-100,
-https://doi.org/10.1007/BFb0027024.
+<https://doi.org/10.1007/BFb0027024>
+
+## License
+
+MIT. See [LICENSE](https://github.com/andremsouza/python-som/blob/master/LICENSE).

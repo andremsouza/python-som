@@ -127,3 +127,12 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# .dump directory
+/.dump
+
+# Claude Code working files. CLAUDE.md holds this maintainer's agent conventions rather than
+# repository policy, so it stays local instead of being imposed on contributors.
+/CLAUDE.md
+/CLAUDE.local.md
+/.claude/
