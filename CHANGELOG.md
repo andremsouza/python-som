@@ -7,6 +7,43 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Removed
+
+- **pandas and scikit-learn are no longer required.** `numpy` is the only runtime dependency.
+  Measured on Linux/CPython 3.12, a fresh install drops from **333 MB across 10 packages to 69 MB
+  across 1** — a 264 MB reduction, 79% of the payload, since the two also pulled in scipy, joblib,
+  narwhals, python-dateutil, six and threadpoolctl.
+
+  Nothing is lost, and input support is *wider*. pandas was used for one `isinstance` check before
+  calling `.to_numpy()`; `np.asarray` already does that via the `__array__` protocol. Because
+  that is a protocol rather than a library, polars, pyarrow, xarray and CuPy objects now work too,
+  without this package knowing they exist.
+
+  scikit-learn supplied one PCA and one z-score, now about twenty lines of `np.linalg.svd`. Both
+  libraries remain in the `dev` extra, where `tests/test_linalg_matches_sklearn.py` re-derives every
+  fit both ways on every CI run rather than trusting a one-off measurement. `pip install
+  python-som[examples]` restores the previous install set for anyone relying on it.
+
+  If you imported pandas or scikit-learn *transitively* through this package, add them to your own
+  dependencies. That reliance was always an accident of packaging.
+
+### Fixed
+
+- **Linear initialization was inaccurate for data far from the origin.** Through 0.3.0 its PCA went
+  to scikit-learn's `auto` solver, which since 1.5 selects `covariance_eigh` when samples outnumber
+  features — it forms the covariance matrix, and squaring the data squares its condition number. On
+  `(150, 4)` data offset by 1e7, the second explained variance was wrong by **5.8%**, and the
+  resulting models differed from the correct ones by 2.43 against a total model spread of 2.0: an
+  error larger than the structure being initialized.
+
+  The NumPy implementation decomposes the centred matrix directly and agrees with a `longdouble`
+  reference to ~1e-15. Data offset far from the origin is not exotic — timestamps, easting/northing
+  coordinates and absolute sensor readings all look like it.
+
+  **This changes results.** For data near the origin the difference is floating-point noise (~1e-15,
+  and `auto_dimensions` is unaffected because it standardizes first). Far from the origin it is
+  large, and 0.4.0 is the correct one.
+
 ### Changed
 
 - The package is now a pure functional core with a thin shell around it. `python_som._core` holds
@@ -16,14 +53,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   trained weights are bit-identical to 0.3.0 for every combination of training mode and neighborhood
   function, which is asserted rather than assumed.
 
-  The boundary is machine-checked, not merely documented: ruff's `TID251` bans pandas and scikit-learn
+  The boundary is machine-checked, not merely documented: ruff's `TID251` bans pandas and
+  scikit-learn
   outside the two shell modules that exist to adapt them, and reports the reason at the point of
   violation. `architecture-profile.toml` records the style.
 
 - The two update rules are now pure functions returning new arrays. An earlier note claimed this was
-  also faster; **it is not**, and the claim is withdrawn. Measured with interleaved arms and medians,
+  also faster; **it is not**, and the claim is withdrawn. Measured with interleaved arms and
+  medians,
   the pure form is about 10% slower on small maps and indistinguishable above roughly 100x100. The
-  cost buys functions testable without constructing a network, and is single-digit milliseconds over a
+  cost buys functions testable without constructing a network, and is single-digit milliseconds over
+  a
   10,000-iteration run on a 20x20 map. `benchmarks/bench_update.py` is the corrected measurement.
 
 ### Fixed
@@ -112,13 +152,15 @@ Modernizes the packaging and corrects four methodology defects. **Numerical resu
 ### Performance
 
 - Batch training is about 30x faster. The nested Python loop over every pair of nodes is
-  replaced by a NumPy contraction. Measured on a 20x20 map with 150 samples over 5 iterations: 1.89 s
+  replaced by a NumPy contraction. Measured on a 20x20 map with 150 samples over 5 iterations: 1.89
+  s
   to 0.06 s. A regression test asserts the new result matches the old formulation to 1e-12.
 
 ### Internal
 
 - The package moves to a `src/` layout and splits into `_som`, `_neighborhood`, `_decay` and
-  `_distance`. `import python_som; python_som.SOM(...)` is unchanged, and the pre-0.3.0 private names
+  `_distance`. `import python_som; python_som.SOM(...)` is unchanged, and the pre-0.3.0 private
+  names
   (`_asymptotic_decay`, `_euclidean_distance`, and the rest) still resolve.
 - `test_iris.ipynb` is removed; its narrative moved into the documentation. `SOM_atualizado.py`, an
   untracked experimental variant that the sdist had been sweeping up, is gone.
@@ -128,7 +170,8 @@ Modernizes the packaging and corrects four methodology defects. **Numerical resu
 
 - The `bubble` neighborhood is documented as using the Chebyshev metric, so its region is a
   square rather than a disc. The behavior is unchanged and follows Vrieze's appendix pseudo-code
-  (`b = MAX(ABS(i - w_i), ABS(j - w_j))`), but it was previously unstated, and it means the bubble is
+  (`b = MAX(ABS(i - w_i), ABS(j - w_j))`), but it was previously unstated, and it means the bubble
+  is
   *not* isotropic under the Euclidean metric. The test suite shipped in 0.2.0 asserted that it was;
   that assertion passed only because no counterexample exists on a grid that small. The smallest is
   at radius `sqrt(50)`, where `(5, 5)` is inside a `sigma = 5` square and `(7, 1)` is outside.
@@ -169,7 +212,8 @@ Modernizes the packaging and corrects four methodology defects. **Numerical resu
   `_gaussian` and `_mexicanhat` now reject a non-finite or non-positive radius; `_bubble` still
   accepts a radius of zero, which selects the winner alone.
 
-- An unknown `neighborhood_function` raised a bare `KeyError`. It now raises `ValueError` listing the
+- An unknown `neighborhood_function` raised a bare `KeyError`. It now raises `ValueError` listing
+  the
   valid names, matching the behavior of `weight_initialization`.
 
 ### Changed

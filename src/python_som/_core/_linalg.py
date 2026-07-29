@@ -1,12 +1,24 @@
-"""Principal component analysis, and the map sizing that depends on it."""
+"""Principal component analysis, and the map sizing that depends on it.
+
+Implemented on ``np.linalg.svd`` rather than scikit-learn. PCA and a z-score were the only two
+things this package used scikit-learn for, and carrying it as a required dependency pulled in scipy,
+joblib and threadpoolctl to reach about twenty lines of linear algebra.
+
+The two functions here reproduce ``sklearn.decomposition.PCA(n_components=k)`` and
+``sklearn.preprocessing.StandardScaler().fit_transform`` exactly, sign conventions and
+degenerate-column handling included. "Exactly" is not an assertion of faith:
+``tests/test_linalg_matches_sklearn.py`` re-checks it against the real scikit-learn on every CI run,
+which is why scikit-learn remains a *test* dependency. Two details are easy to get wrong and are
+therefore spelled out where they are implemented: the sign convention is v-based, not the more
+common u-based one, and a near-constant column is scaled by 1 rather than by its own vanishing
+standard deviation.
+"""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
-import sklearn.decomposition
-import sklearn.preprocessing
 
 if TYPE_CHECKING:  # pragma: no cover
     import numpy.typing as npt
@@ -33,27 +45,70 @@ class PrincipalComponents(NamedTuple):
 def pca(data: npt.NDArray[Any], n_components: int = _N_COMPONENTS) -> PrincipalComponents:
     """Fit a PCA and return its mean, components and explained variance.
 
+    The singular value decomposition of the centred data gives the components directly: for
+    ``X - mean = U S V^T``, the rows of ``V^T`` are the component directions and ``S^2 / (n - 1)``
+    the variance along each.
+
+    **On the sign convention.** An SVD determines each component only up to sign, so a convention is
+    needed for the result to be reproducible. scikit-learn's PCA calls ``svd_flip`` with
+    ``u_based_decision=False``, which orients each component so that its largest-magnitude *loading*
+    is positive. That is the less common of the two conventions in that helper, and taking its
+    default instead would flip the sign of some components: the fit would still be a valid PCA, but
+    it would not be the same one, and linear initialization would lay its models out reversed along
+    that axis.
+
     :param data: Array of shape ``(n_samples, n_features)``.
     :param n_components: Number of components to keep.
     :return: The fitted mean, components and explained variance.
     """
-    fitted = sklearn.decomposition.PCA(n_components=n_components, random_state=0)
-    fitted.fit(data)
+    array = np.asarray(data, dtype=float)
+    mean = array.mean(axis=0)
+    _, singular_values, right_vectors = np.linalg.svd(array - mean, full_matrices=False)
+
+    # Orient each component on its largest-magnitude loading. The flip is applied to all of them
+    # before truncation, which is the order scikit-learn does it in.
+    dominant = np.argmax(np.abs(right_vectors), axis=1)
+    signs = np.sign(right_vectors[np.arange(right_vectors.shape[0]), dominant])
+    right_vectors = right_vectors * signs[:, None]
+
+    explained_variance = singular_values**2 / (array.shape[0] - 1)
     return PrincipalComponents(
-        mean=fitted.mean_,
-        components=fitted.components_,
-        explained_variance=fitted.explained_variance_,
+        mean=mean,
+        components=right_vectors[:n_components],
+        explained_variance=explained_variance[:n_components],
     )
 
 
 def standardize(data: npt.NDArray[Any]) -> npt.NDArray[np.floating]:
     """Centre each column on zero and scale it to unit variance.
 
+    The variance is the population variance (``ddof=0``), which is what ``StandardScaler`` uses.
+
+    **On constant columns.** A column with no variance would be divided by zero, giving ``inf`` or
+    ``nan`` and poisoning the PCA downstream. Such a column is scaled by 1 instead, leaving it at
+    its centred value of zero. The test for it is not ``variance == 0`` but scikit-learn's bound
+    from Chan, Golub and LeVeque on the error of the two-pass variance algorithm, so that a column
+    which is constant in exact arithmetic is still caught when floating-point noise leaves it merely
+    very small.
+
     :param data: Array of shape ``(n_samples, n_features)``.
     :return: The standardized array.
     """
-    scaled: npt.NDArray[np.floating] = sklearn.preprocessing.StandardScaler().fit_transform(data)
-    return scaled
+    array = np.asarray(data, dtype=float)
+    mean = array.mean(axis=0)
+    variance = array.var(axis=0)
+
+    n_samples = array.shape[0]
+    eps = np.finfo(np.float64).eps
+    indistinguishable_from_constant = variance <= (
+        n_samples * eps * variance + (n_samples * mean * eps) ** 2
+    )
+
+    scale = np.sqrt(variance)
+    scale[indistinguishable_from_constant] = 1.0
+
+    standardized: npt.NDArray[np.floating] = (array - mean) / scale
+    return standardized
 
 
 def auto_dimensions(x: int | None, y: int | None, data: npt.NDArray[Any]) -> tuple[int, int]:
