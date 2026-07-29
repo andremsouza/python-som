@@ -8,8 +8,8 @@
 Implementation of Kohonen's 2-D self-organizing map, built on NumPy, with scikit-learn for PCA and
 standardization. Accepts NumPy arrays, pandas DataFrames and plain lists.
 
-**[Documentation](https://andremsouza.github.io/python-som/)** ·
-**[Changelog](https://github.com/andremsouza/python-som/blob/master/CHANGELOG.md)**
+[Documentation](https://andremsouza.github.io/python-som/) ·
+[Changelog](https://github.com/andremsouza/python-som/blob/master/CHANGELOG.md)
 
 ## Install
 
@@ -83,20 +83,20 @@ different map. **To reproduce figures made with an earlier version, pin `python-
 
 Also changed:
 
-* **Batch training no longer destroys models** whose neighborhood contains no data. They previously
+* Batch training no longer destroys models whose neighborhood contains no data. They previously
   became the zero vector; on a 30×30 map with 20 samples, 282 of 900 models were wiped in one step.
-* **Linear initialization now spans the principal-component plane.** It used the eigen*values* where
+* Linear initialization now spans the principal-component plane. It used the eigen*values* where
   it needed the eigen*vectors*, so every model came out as a constant vector. PCA is also now fitted
   on raw data rather than standardized data, so the models share the input space.
-* **`sequential` mode honours `n_iteration`.** It previously ran one pass over the dataset whatever
+* `sequential` mode honours `n_iteration`. It previously ran one pass over the dataset whatever
   you asked for.
-* **The automatic map-size ratio uses `√(λ₁/λ₂)`** rather than the raw eigenvalue ratio, and rounds
+* The automatic map-size ratio uses `√(λ₁/λ₂)` rather than the raw eigenvalue ratio, and rounds
   rather than floor-dividing, so a side length can no longer come out as zero.
-* **The neighborhood radius is floored** at `min_neighborhood_radius` (default 0.5), per Kohonen
+* The neighborhood radius is floored at `min_neighborhood_radius` (default 0.5), per Kohonen
   Section 4.2.
-* **`get_shape()` returns `tuple[int, int]`** instead of NumPy integers, so `figsize=som.get_shape()`
+* `get_shape()` returns `tuple[int, int]` instead of NumPy integers, so `figsize=som.get_shape()`
   works.
-* **`requires-python` is `>=3.10`**, which is what the code actually needs.
+* `requires-python` is `>=3.10`, which is what the code actually needs.
 
 The full list, with citations, is in the [changelog](https://github.com/andremsouza/python-som/blob/master/CHANGELOG.md).
 
