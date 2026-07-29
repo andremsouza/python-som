@@ -32,13 +32,15 @@ preset = "functional-core+ports"
 # loosened until it checked nothing.
 core_packages = ["python_som._core"]
 
-# NumPy is the core's one intended dependency. sklearn is here for `_core/_linalg.py` alone, and
-# PR #8 replaces it with `np.linalg.svd`, at which point this becomes `["numpy"]`. scipy is
-# deliberately absent from the preset default: it arrives transitively through sklearn but nothing
-# here imports it, and an allowlist should list what is used.
-core_allowed_third_party = ["numpy", "sklearn"]
+# NumPy, and nothing else. 0.4.0 replaced the one sklearn use (`_core/_linalg.py`) with
+# `np.linalg.svd`, so the allowlist is now as short as it can be without being empty. scipy is
+# deliberately absent from the preset default: it used to arrive transitively through sklearn, and
+# now does not arrive at all.
+core_allowed_third_party = ["numpy"]
 
 source_roots = ["", "src"]
 
-# The pandas boundary. Informational to the checker; the boundary itself is the dependency rule.
+# The data-input boundary. Informational to the checker; the boundary itself is the dependency rule.
+# It no longer adapts pandas specifically -- it is `np.asarray` behind a name -- but it remains the
+# one place that decides what counts as a dataset.
 ports_module = "python_som._convert"

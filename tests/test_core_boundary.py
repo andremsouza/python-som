@@ -62,13 +62,31 @@ def test_no_core_module_imports_pandas() -> None:
     assert not offenders, f"the core must not import pandas: {offenders}"
 
 
-def test_sklearn_appears_in_exactly_one_core_module() -> None:
-    """``_linalg`` is the only place sklearn is reached, and PR #8 replaces it with numpy.
+def test_no_core_module_imports_sklearn() -> None:
+    """0.4.0 replaced the one sklearn use with ``np.linalg.svd``, so the ban is now absolute.
 
-    Pinning it to one module is what makes that removal a single-file change rather than a hunt.
+    Through 0.3.0 this asserted the opposite -- that ``_linalg`` was the *only* module reaching
+    sklearn -- which is what kept the removal a single-file change rather than a hunt.
     """
-    users = sorted(p.name for p in _CORE.glob("*.py") if "sklearn" in _imports_of(p))
-    assert users == ["_linalg.py"], users
+    offenders = sorted(p.name for p in _CORE.glob("*.py") if "sklearn" in _imports_of(p))
+    assert not offenders, f"the core must not import scikit-learn: {offenders}"
+
+
+def test_the_whole_package_is_numpy_only_at_runtime() -> None:
+    """The shell, not just the core. This is what the 264 MB saving actually rests on.
+
+    Scans every module under ``src/`` rather than only ``_core/``, because after 0.4.0 no module in
+    the package imports pandas or scikit-learn -- the port is ``np.asarray`` and the PCA is
+    ``np.linalg.svd``. A `per-file-ignores` entry restoring either would pass ruff silently.
+    """
+    package = pathlib.Path(python_som.__file__).parent
+    banned = {"pandas", "sklearn", "scipy"}
+    offenders = {
+        str(path.relative_to(package)): sorted(_imports_of(path) & banned)
+        for path in package.rglob("*.py")
+        if _imports_of(path) & banned
+    }
+    assert not offenders, f"runtime modules must not import {banned}: {offenders}"
 
 
 def test_every_core_module_is_importable() -> None:
