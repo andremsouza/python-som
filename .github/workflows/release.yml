@@ -59,3 +59,48 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # release/v1
+
+  github-release:
+    name: create the GitHub release
+    # Runs only after PyPI accepted the upload, so a GitHub release never claims a version that was
+    # not actually published.
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+      - name: extract this version's changelog section
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          tag = os.environ["GITHUB_REF_NAME"]
+          version = tag.removeprefix("v")
+          changelog = pathlib.Path("CHANGELOG.md").read_text()
+          # everything from this version's heading up to the next one
+          match = re.search(
+              rf"^## \[{re.escape(version)}\].*?\n(.*?)(?=^## \[)",
+              changelog,
+              re.MULTILINE | re.DOTALL,
+          )
+          notes = match.group(1).strip() if match else f"See CHANGELOG.md for {version}."
+          pathlib.Path("release-notes.md").write_text(notes + "\n")
+          print(f"extracted {len(notes.splitlines())} lines of notes for {version}")
+          PY
+      # gh is preinstalled on GitHub runners, so this needs no third-party action.
+      - name: create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ github.ref_name }}"
+          --title "${{ github.ref_name }}"
+          --notes-file release-notes.md
+          --verify-tag
+          dist/*
