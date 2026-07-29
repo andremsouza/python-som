@@ -5,6 +5,99 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-07-29
+
+Modernizes the packaging and corrects four methodology defects. **Numerical results differ from
+0.2.0.** The changes are listed with the passage of Kohonen (2013) each one follows.
+
+### Changed, and results differ
+
+- **Seeds no longer reproduce 0.1.x/0.2.0 results.** The random generator is now a per-instance
+  `np.random.Generator`. Previously the constructor called `np.random.seed`, which reseeded NumPy's
+  *global* generator as a side effect of building a SOM, disturbing the whole host program. The
+  side effect is gone, but `random_seed=42` now yields a different map.
+
+  To reproduce figures made with an earlier version, pin `python-som==0.2.0`.
+
+- Batch training no longer destroys models whose neighborhood contains no data. `_train_batch`
+  built its result from a zeroed array and assigned it wholesale, so every model it did not touch
+  became the zero vector. On a 30x30 map with 20 samples and a small radius, that wiped 282 of 900
+  models in a single step, and drove the quantization error from 0.0 to 0.196. Untouched models now
+  keep their previous value, and the denominator is compared against a tolerance rather than exact
+  zero. (Kohonen Eq. 8.)
+
+- Linear initialization now spans the principal-component plane. It used
+  `pca.explained_variance_`, the two eigen*values*, where it needed `pca.components_`, the
+  eigen*vectors*. Every model came out as a scalar broadcast across all features: a constant vector
+  on the all-ones diagonal, rank 1 rather than a plane. PCA is also now fitted on the raw data
+  instead of standardized data, so the models live in the same space as the inputs they are compared
+  against during training. (Kohonen Section 4.3.)
+
+- `random` training now samples i.i.d. with replacement. It previously drew with
+  `replace=(n_iteration > len(data))`, so it was a random permutation whenever the iteration count
+  did not exceed the sample count, and independent draws only beyond it. The character of the
+  sampling therefore depended on how many iterations you asked for. It is now uniformly i.i.d.,
+  which is the stochastic approximation of Robbins and Monro (1951) that Kohonen cites in
+  Section 4.1.
+
+- `sequential` training honours `n_iteration`. It iterated the dataset exactly once regardless
+  of the requested count, so asking for 500 iterations over 30 samples ran 30 steps while the decay
+  functions still used 500 as their horizon, leaving the learning rate almost unchanged. It now
+  cycles the dataset until the requested number of steps has run.
+
+- The automatic map-size ratio uses `sqrt(lambda_1 / lambda_2)` rather than the raw eigenvalue
+  ratio, rounds instead of floor-dividing, and clamps to at least 1 so a side can no longer come out
+  as zero. Kohonen Section 3.5 asks for side lengths matching "the lengths of the two largest
+  principal components"; a component is a unit direction, so its length in the data is the standard
+  deviation. For Iris with `x=20`, `y` moves from 6 to 11.
+
+- The neighborhood radius is floored at the new `min_neighborhood_radius` parameter, default
+  0.5. Kohonen Section 4.2: "the final value of sigma shall not go to zero, because otherwise the
+  process loses its ordering power. It should always remain, say, above half of the grid spacing."
+  This also stops `linear_decay` from reaching a division by zero at its horizon.
+
+- `get_shape()` returns `tuple[int, int]` rather than NumPy integers, so
+  `plt.figure(figsize=som.get_shape())` works without the `float()` workaround the old example
+  needed.
+
+### Added
+
+- `mexican_hat` is accepted as an alias for `mexicanhat`.
+- A test suite, where there was none: 190 tests at 100% coverage, including one regression test
+  per defect above carrying its measured numbers, and property-based tests via Hypothesis over
+  generated grid sizes, radii and centres.
+- Type annotations are now exported, via a `py.typed` marker. The library was already annotated,
+  but without the marker PEP 561 requires downstream type checkers to ignore it.
+- Documentation site at <https://andremsouza.github.io/python-som/>, built with Material for
+  MkDocs, including the derivations behind the neighborhood functions.
+- Continuous integration across Python 3.10 to 3.13, with ruff, mypy `--strict`, coverage
+  gating, and a build that installs the wheel into a clean environment and imports it.
+- Releases publish through PyPI Trusted Publishing, so no long-lived API token exists.
+
+### Performance
+
+- Batch training is about 30x faster. The nested Python loop over every pair of nodes is
+  replaced by a NumPy contraction. Measured on a 20x20 map with 150 samples over 5 iterations: 1.89 s
+  to 0.06 s. A regression test asserts the new result matches the old formulation to 1e-12.
+
+### Internal
+
+- The package moves to a `src/` layout and splits into `_som`, `_neighborhood`, `_decay` and
+  `_distance`. `import python_som; python_som.SOM(...)` is unchanged, and the pre-0.3.0 private names
+  (`_asymptotic_decay`, `_euclidean_distance`, and the rest) still resolve.
+- `test_iris.ipynb` is removed; its narrative moved into the documentation. `SOM_atualizado.py`, an
+  untracked experimental variant that the sdist had been sweeping up, is gone.
+- `print` calls become `logging`; `verbose=True` still drives the tqdm progress bar.
+
+### Fixed
+
+- The `bubble` neighborhood is documented as using the Chebyshev metric, so its region is a
+  square rather than a disc. The behavior is unchanged and follows Vrieze's appendix pseudo-code
+  (`b = MAX(ABS(i - w_i), ABS(j - w_j))`), but it was previously unstated, and it means the bubble is
+  *not* isotropic under the Euclidean metric. The test suite shipped in 0.2.0 asserted that it was;
+  that assertion passed only because no counterexample exists on a grid that small. The smallest is
+  at radius `sqrt(50)`, where `(5, 5)` is inside a `sigma = 5` square and `(7, 1)` is outside.
+
 ## [0.2.0] - 2026-07-28
 
 ### Added
@@ -29,7 +122,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **Cyclic (toroidal) neighborhoods were only correct in one direction.** The fold-back handled
+- Cyclic (toroidal) neighborhoods were only correct in one direction. The fold-back handled
   offsets above `+length/2` but left those below `-length/2` alone, so a winner in the upper half of
   an axis did not wrap. On a 10x10 toroidal map with sigma=1, a winner at row 0 gave `h[9] = 0.6065`
   while a winner at row 9 gave `h[0] = 0.0` instead of the same 0.6065. Now uses the minimum-image
@@ -46,7 +139,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **`requires-python` is now `>=3.10`.** The declared floor of `>=3.9` was never accurate: the module
+- `requires-python` is now `>=3.10`. The declared floor of `>=3.9` was never accurate: the module
   uses PEP 604 unions (`int | None`) in runtime-evaluated annotations without
   `from __future__ import annotations`, so importing it on Python 3.9 raises `TypeError`. Python 3.9
   reached end of life in October 2025. Installers will now decline the package on 3.9 rather than
@@ -80,6 +173,7 @@ Published to PyPI only. See the note above.
 Earlier releases predate this changelog. See the
 [commit history](https://github.com/andremsouza/python-som/commits/master) for details.
 
+[0.3.0]: https://github.com/andremsouza/python-som/releases/tag/v0.3.0
 [0.2.0]: https://github.com/andremsouza/python-som/releases/tag/v0.2.0
 [0.1.3]: https://pypi.org/project/python-som/0.1.3/
 [0.1.2]: https://pypi.org/project/python-som/0.1.2/

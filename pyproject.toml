@@ -1,15 +1,16 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
+
 [project]
 name = "python-som"
-version = "0.2.0"
-authors = [
-  { name="André Moreira Souza", email="msouza.andre@hotmail.com" },
-]
+version = "0.3.0"
+authors = [{ name = "André Moreira Souza", email = "msouza.andre@hotmail.com" }]
 description = "Python implementation of the Self-Organizing Map"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -17,23 +18,152 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
+    "Typing :: Typed",
 ]
-license = "MIT"
-license-files = ["LICEN[CS]E*"]
 dependencies = [
-    "numpy",
-    "pandas",
-    "scikit-learn",
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scikit-learn>=1.3",
 ]
 
 [project.optional-dependencies]
-cli = [
-    "tqdm",
+cli = ["tqdm>=4.66"]
+dev = [
+    "hypothesis==6.163.0",
+    "mypy==2.3.0",
+    # pandas-stubs 3.x needs Python >=3.11; it is dev-only, so gate it rather than
+    # raising the library's own floor. mypy runs on 3.12 in CI, where it is present.
+    "pandas-stubs==3.0.3.260530; python_version >= '3.11'",
+    "pre-commit==4.6.1",
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "ruff==0.16.0",
+    # tomllib entered the stdlib in 3.11; tomli is the backport it was derived from.
+    "tomli==2.4.1; python_version < '3.11'",
+    "twine==7.0.0",
+    "types-tqdm==4.69.0.20260728",
+]
+docs = [
+    "mkdocs-material==9.7.7",
+    "mkdocstrings-python==2.0.5",
+]
+examples = [
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
 ]
 
 [project.urls]
 Homepage = "https://github.com/andremsouza/python-som"
+Documentation = "https://andremsouza.github.io/python-som/"
+Changelog = "https://github.com/andremsouza/python-som/blob/master/CHANGELOG.md"
 Issues = "https://github.com/andremsouza/python-som/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/python_som"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/docs",
+    "/examples",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    # The 13-argument constructor is the established public API. Reducing it, or forcing the
+    # arguments keyword-only, would break every existing caller for no gain in correctness.
+    "PLR0913",
+    "PLR0917",
+    # `verbose`, `normalize` and `cyclic_*` are long-standing boolean parameters of the public
+    # API. Making them keyword-only would break positional callers.
+    "FBT001",
+    "FBT002",
+    # Conflicts with the formatter.
+    "COM812",
+    "ISC001",
+    # This project documents parameters with `:param:` rather than a Google/NumPy section.
+    "D417",
+    # Per-file copyright headers are not this project's convention; the MIT terms live in
+    # LICENSE and are declared in the package metadata.
+    "CPY001",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    # Tests reach into private helpers deliberately; that is what is under test.
+    "SLF001",
+    # assert is the point of a test.
+    "S101",
+    # Tests do not need to document every parameter.
+    "D103",
+    "D100",
+    # Magic values are the expected values being asserted.
+    "PLR2004",
+]
+"examples/*" = ["INP001", "T201", "D100"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.ruff.lint.isort]
+known-first-party = ["python_som"]
+
+[tool.mypy]
+# Deliberately not pinned to python_version = "3.10". NumPy's bundled stubs use 3.12 syntax, and
+# `tomllib` is 3.11+, so pinning to the floor makes mypy fail on the dependencies rather than on
+# our code. Real 3.10 compatibility is covered by the CI test matrix instead.
+strict = true
+files = ["src", "tests"]
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+
+[[tool.mypy.overrides]]
+module = ["sklearn.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+]
+markers = [
+    "slow: end-to-end runs; deselect with -m 'not slow'",
+]
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+# source_pkgs, not source: with a src layout the package under test is the installed one, and
+# coverage has to resolve it by import name rather than by directory.
+source_pkgs = ["python_som"]
+branch = true
+
+[tool.coverage.paths]
+source = ["src/python_som", "*/site-packages/python_som"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

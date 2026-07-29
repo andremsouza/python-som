@@ -1,0 +1,61 @@
+name: release
+
+# The filename matters: `release.yml` is registered as the workflow name on the PyPI trusted
+# publisher for this project. Renaming this file breaks publishing until PyPI is updated to match.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build the distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: true
+      - run: uv build
+      - name: twine check
+        run: uv run --with twine==7.0.0 twine check dist/*
+      - name: the tag and the packaged version must agree
+        run: |
+          uv run python - <<'PY'
+          import os
+          import pathlib
+          import sys
+          import tomllib
+
+          tag = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          pkg = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"]
+          print(f"tag={tag} packaged={pkg}")
+          if tag != pkg:
+              sys.exit(f"::error::tag {tag} does not match packaged version {pkg}")
+          PY
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    # Registered on PyPI as the trusted publisher's environment. It carries a required-reviewer
+    # rule, so a publish waits for a human, and a v* tag policy, so it cannot run from a branch.
+    environment: pypi
+    permissions:
+      # Mandatory for trusted publishing: this is what lets the job prove its identity to PyPI.
+      # No API token is stored in the repository or anywhere else.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # release/v1

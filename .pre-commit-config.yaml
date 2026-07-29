@@ -1,0 +1,45 @@
+default_language_version:
+  python: python3
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: trailing-whitespace
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.0
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  # Keep this rev in step with the `mypy` pin in pyproject.toml's dev extra, or the hook and CI
+  # will disagree about what type-checks.
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.3.0
+    hooks:
+      - id: mypy
+        files: ^(src|tests)/
+        additional_dependencies:
+          - numpy>=1.24
+          - pandas-stubs
+          - pytest
+          - types-tqdm
+
+  - repo: local
+    hooks:
+      # The narrative that used to live in test_iris.ipynb now lives in docs/. Notebooks are not
+      # diffable, not CI-verifiable, and carry their outputs in the committed blob.
+      - id: no-notebooks
+        name: reject committed Jupyter notebooks
+        entry: Jupyter notebooks are not tracked in this repository; put the narrative in docs/.
+        language: fail
+        files: \.ipynb$
