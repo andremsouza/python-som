@@ -105,7 +105,13 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+# The two shell modules that adapt a third-party library are exactly where these imports belong.
+"src/python_som/_convert.py" = ["TID251"]          # the pandas port
+"src/python_som/_core/_linalg.py" = ["TID251"]     # sklearn, until PR #8 replaces it with numpy
+# Tests must be able to build a DataFrame to exercise the port, and to compare our PCA against
+# sklearn's differentially. The ban protects the core, not the suite that checks it.
 "tests/*" = [
+    "TID251",
     # Tests reach into private helpers deliberately; that is what is under test.
     "SLF001",
     # assert is the point of a test.
@@ -117,6 +123,15 @@ ignore = [
     "PLR2004",
 ]
 "examples/*" = ["INP001", "T201", "D100"]
+# Scripts a human runs, not importable modules: a table on stdout is the deliverable, and neither
+# directory should become a package just to satisfy the implicit-namespace rule.
+"benchmarks/*" = ["INP001", "T201"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# The functional core is numpy-only. These are re-permitted per-file below for the shell modules
+# that exist precisely to adapt them; PR #8 removes both exemptions.
+"pandas".msg = "The core is numpy-only. Convert at the boundary in python_som/_convert.py."
+"sklearn".msg = "The core is numpy-only. Linear algebra belongs in python_som/_core/_linalg.py."
 
 [tool.ruff.lint.pydocstyle]
 convention = "pep257"
@@ -160,7 +175,9 @@ branch = true
 source = ["src/python_som", "*/site-packages/python_som"]
 
 [tool.coverage.report]
-fail_under = 90
+# The suite is at 100%. A lower gate would permit a silent regression, and anything genuinely
+# unreachable should carry an explicit `# pragma: no cover` a reviewer can question.
+fail_under = 100
 show_missing = true
 exclude_lines = [
     "pragma: no cover",

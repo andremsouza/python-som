@@ -1,4 +1,8 @@
-"""Implementation of the 2-D self-organizing map.
+"""The SOM class: validation, state, the training loops, and delegation to the core.
+
+This is the shell. Every numeric decision lives in :mod:`python_som._core`, whose functions take
+their inputs explicitly and return values; this module holds the state those functions are given and
+the loops that thread it.
 
 Reference:
 Teuvo Kohonen, Essentials of the self-organizing map, Neural Networks 37 (2013) 52-65,
@@ -9,32 +13,27 @@ from __future__ import annotations
 
 import logging
 import secrets
-from collections import Counter
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
-import sklearn.decomposition
-import sklearn.preprocessing
 
-from ._decay import asymptotic_decay
-from ._distance import euclidean_distance
-from ._neighborhood import (
-    NEIGHBORHOOD_FUNCTIONS,
-    SIGNED_NEIGHBORHOODS,
-    bubble,
-    resolve,
-)
+from ._convert import to_numpy
+from ._core._decay import asymptotic_decay
+from ._core._distance import euclidean_distance
+from ._core._initialize import linear_models, random_models, sample_models
+from ._core._linalg import auto_dimensions
+from ._core._maps import activation_matrix, label_map, u_matrix, winner_map
+from ._core._match import accumulate, activate, quantization, winner
+from ._core._neighborhood import SIGNED_NEIGHBORHOODS, resolve
+from ._core._update import batch_update, stepwise_update
 
 if TYPE_CHECKING:  # pragma: no cover
+    from collections import Counter
     from collections.abc import Callable, Iterable
-    from typing import TypeAlias
 
-    from ._neighborhood import NeighborhoodFunction
-
-    #: Anything the public methods accept as a dataset.
-    DataLike: TypeAlias = npt.NDArray[Any] | pd.DataFrame | pd.Series[Any] | list[Any]
+    from ._convert import DataLike
+    from ._core._neighborhood import NeighborhoodFunction
 
 try:
     import tqdm
@@ -52,20 +51,14 @@ _T = TypeVar("_T")
 TRAINING_MODES = ("random", "sequential", "batch")
 INITIALIZATION_MODES = ("random", "linear", "sample")
 
-#: Iterations per sample when ``n_iteration`` is not given, by training mode.
+#: Iterations per sample when ``n_iteration`` is not given, by training mode. Kohonen (2013)
+#: Section 3.1: the batch process "usually needs to be reiterated a few to a few dozen times",
+#: against "an order of magnitude" more steps for the stepwise one.
 DEFAULT_ITERATIONS_PER_SAMPLE = {"random": 1000, "sequential": 1000, "batch": 10}
 
-#: Denominators below this are treated as empty in the batch update, guarding against a
-#: near-zero divisor in Kohonen Eq. (8).
-_BATCH_DENOMINATOR_TOLERANCE = 1e-12
-
-#: Width of an automatically drawn seed. 128 bits matches what NumPy's own
-#: SeedSequence uses when it seeds itself from the OS entropy pool.
+#: Width of an automatically drawn seed. 128 bits matches what NumPy's own SeedSequence uses when it
+#: seeds itself from the OS entropy pool.
 _SEED_BITS = 128
-
-#: Linear initialization projects onto two principal components, so it needs at least this
-#: many samples and features.
-_MIN_PCA_DIMENSIONS = 2
 
 
 class SOM:
@@ -75,7 +68,7 @@ class SOM:
         - Stepwise and batch training
         - Random, random-sampling and linear (PCA) weight initialization
         - Automatic selection of the map size ratio (with PCA)
-        - Support for cyclic arrays, for toroidal or spherical maps
+        - Support for cyclic arrays, for toroidal maps
         - Gaussian, bubble and mexican hat neighborhood functions
         - Support for custom decay functions
         - Support for visualization (U-matrix, activation matrix)
@@ -106,8 +99,8 @@ class SOM:
     ) -> None:
         """Construct a self-organizing map.
 
-        :param x: Number of rows. If None, chosen from ``data`` by PCA; see
-            :meth:`_auto_dimension`. At least one of ``x`` and ``y`` must be given.
+        :param x: Number of rows. If None, chosen from ``data`` by PCA. At least one of ``x`` and
+            ``y`` must be given.
         :param y: Number of columns. If None, chosen from ``data`` by PCA.
         :param input_len: Number of features per input vector.
         :param learning_rate: Initial learning rate. Irrelevant for batch training.
@@ -132,7 +125,13 @@ class SOM:
             msg = "At least one of the dimensions (x, y) must be specified"
             raise ValueError(msg)
         if x is None or y is None:
-            x, y = self._auto_dimension(x, y, data)
+            if data is None:
+                msg = (
+                    "If one of the dimensions is not specified, a dataset must be provided "
+                    "for automatic size initialization."
+                )
+                raise ValueError(msg)
+            x, y = auto_dimensions(x, y, to_numpy(data))
 
         if x <= 0 or y <= 0:
             msg = f"Map dimensions must be positive, got ({x}, {y})"
@@ -165,53 +164,9 @@ class SOM:
             int(random_seed) if random_seed is not None else secrets.randbits(_SEED_BITS)
         )
         self._rng = np.random.default_rng(self._random_seed)
+        self._weights = random_models(self._shape, self._input_len, self._rng)
 
-        self._weights = self._rng.standard_normal(
-            size=(self._shape[0], self._shape[1], self._input_len)
-        )
-
-    @staticmethod
-    def _auto_dimension(
-        x: int | None,
-        y: int | None,
-        data: DataLike | None,
-    ) -> tuple[int, int]:
-        """Choose the missing dimension from the two largest principal components.
-
-        Kohonen (2013) Section 3.5: "it is advisable to select the lengths of the horizontal and
-        vertical dimensions of the array to correspond to the lengths of the two largest principal
-        components (i.e., those with the highest eigenvalues of the input correlation matrix),
-        because then the SOM complies better with the low-order signal statistics."
-
-        A principal component is a unit direction; its *length* in the data is the extent along it,
-        which is the standard deviation ``sqrt(lambda)``. The parenthetical identifies which
-        components to use, not what quantity to measure. The side-length ratio is therefore
-        ``sqrt(lambda_1 / lambda_2)``, which is also what Kohonen's SOM Toolbox implements.
-
-        The x axis is taken to align with the first principal component, so it is the longer side.
-
-        :param x: Number of rows, or None to derive it.
-        :param y: Number of columns, or None to derive it.
-        :param data: Dataset to run PCA on.
-        :return: Both dimensions, as positive integers.
-        :raises ValueError: If no dataset is available for sizing.
-        """
-        if data is None:
-            msg = (
-                "If one of the dimensions is not specified, a dataset must be provided "
-                "for automatic size initialization."
-            )
-            raise ValueError(msg)
-        array = data.to_numpy() if isinstance(data, pd.DataFrame) else np.asarray(data)
-        scaled = sklearn.preprocessing.StandardScaler().fit_transform(array)
-        pca = sklearn.decomposition.PCA(n_components=2, random_state=0)
-        pca.fit(scaled)
-        ratio = float(np.sqrt(pca.explained_variance_[0] / pca.explained_variance_[1]))
-        if x is None:
-            x = max(1, round(y / ratio))  # type: ignore[operator]
-        if y is None:
-            y = max(1, round(x / ratio))
-        return int(x), int(y)
+    # ------------------------------------------------------------------ accessors
 
     def get_shape(self) -> tuple[int, int]:
         """Return the shape of the network."""
@@ -248,13 +203,15 @@ class SOM:
         """
         return self._neighborhood_function(self._shape, c, sigma, self._cyclic)
 
+    # ------------------------------------------------------------------ inference
+
     def activate(self, x: npt.ArrayLike) -> npt.NDArray[np.floating]:
         """Return the distance from ``x`` to every model of the network.
 
         :param x: Input vector.
         :return: Distances, with the shape of the network.
         """
-        return self._distance_function(x, self._weights)
+        return activate(x, self._weights, self._distance_function)
 
     def winner(self, x: npt.ArrayLike) -> tuple[int, int]:
         """Return the coordinates of the best-matching unit for ``x``.
@@ -262,9 +219,7 @@ class SOM:
         :param x: Input vector.
         :return: Coordinates of the winner.
         """
-        activation_map = self.activate(x)
-        index = np.unravel_index(activation_map.argmin(), activation_map.shape)
-        return int(index[0]), int(index[1])
+        return winner(x, self._weights, self._distance_function)
 
     def quantization(self, data: DataLike) -> npt.NDArray[np.floating]:
         """Return the distance from each sample to its best-matching model.
@@ -272,8 +227,7 @@ class SOM:
         :param data: Dataset of shape ``(n_samples, n_features)``.
         :return: One distance per sample.
         """
-        array = self._to_numpy(data)
-        return np.array([self._distance_function(i, self._weights[self.winner(i)]) for i in array])
+        return quantization(to_numpy(data), self._weights, self._distance_function)
 
     def quantization_error(self, data: DataLike) -> float:
         """Return the mean distance from each sample to its best-matching model.
@@ -283,38 +237,21 @@ class SOM:
         """
         return float(self.quantization(data).mean())
 
+    # ------------------------------------------------------------------ summaries
+
     def distance_matrix(self, normalize: bool = False) -> npt.NDArray[np.floating]:
         """Return the U-matrix: the summed distance from each model to its immediate neighbours.
-
-        The distances to one node's neighbourhood are computed and consumed one node at a time
-        rather than being accumulated into a full ``(x, y, x, y)`` tensor, which would cost
-        ``(x*y)**2`` floats: about 800 MB for a 100x100 map, for a result of ``x*y`` numbers.
 
         :param normalize: Whether to rescale the result to ``[0, 1]``.
         :return: U-matrix, with the shape of the network.
         """
-        um = np.zeros(self._shape)
-        for index in np.ndindex(self._shape):
-            adjacency = self._adjacency(index)
-            distances = self._distance_function(self._weights[index], self._weights)
-            um[index] = np.sum(adjacency * distances)
-        if normalize:
-            spread = np.max(um) - np.min(um)
-            if spread > 0:
-                um = (um - np.min(um)) / spread
-        return um
-
-    def _adjacency(self, c: tuple[int, ...]) -> npt.NDArray[np.floating]:
-        """Return an indicator over ``c`` and the nodes immediately adjacent to it.
-
-        Used by :meth:`distance_matrix`, deliberately independent of the configured neighborhood
-        function: the U-matrix describes the grid, not the training schedule. The centre is included
-        and contributes a distance of zero, so it does not affect the sum.
-
-        :param c: Coordinates of the centre.
-        :return: Indicator array, with the shape of the network.
-        """
-        return bubble(self._shape, (int(c[0]), int(c[1])), 1.0, self._cyclic)
+        return u_matrix(
+            self._weights,
+            self._shape,
+            self._cyclic,
+            self._distance_function,
+            normalize=normalize,
+        )
 
     def activation_matrix(self, data: DataLike) -> npt.NDArray[np.floating]:
         """Return how many samples map to each node.
@@ -322,11 +259,9 @@ class SOM:
         :param data: Dataset of shape ``(n_samples, n_features)``.
         :return: Counts, with the shape of the network.
         """
-        array = self._to_numpy(data)
-        counts = np.zeros(self._shape)
-        for i in array:
-            counts[self.winner(i)] += 1
-        return counts
+        return activation_matrix(
+            to_numpy(data), self._weights, self._shape, self._distance_function
+        )
 
     def winner_map(self, data: DataLike) -> dict[tuple[int, int], list[npt.NDArray[Any]]]:
         """Return, for each node, the samples that map to it.
@@ -334,19 +269,9 @@ class SOM:
         :param data: Dataset of shape ``(n_samples, n_features)``.
         :return: Mapping from node coordinates to the samples assigned to that node.
         """
-        array = self._to_numpy(data)
-        result: dict[tuple[int, int], list[npt.NDArray[Any]]] = {
-            (int(i), int(j)): [] for i, j in np.ndindex(self._shape)
-        }
-        for i in array:
-            result[self.winner(i)].append(i)
-        return result
+        return winner_map(to_numpy(data), self._weights, self._shape, self._distance_function)
 
-    def label_map(
-        self,
-        data: DataLike,
-        labels: DataLike,
-    ) -> dict[tuple[int, int], Counter[Any]]:
+    def label_map(self, data: DataLike, labels: DataLike) -> dict[tuple[int, int], Counter[Any]]:
         """Return, for each node, the frequency of each label mapped to it.
 
         :param data: Dataset of shape ``(n_samples, n_features)``.
@@ -354,20 +279,15 @@ class SOM:
         :return: Mapping from node coordinates to a label counter.
         :raises ValueError: If ``data`` and ``labels`` have different lengths.
         """
-        array = self._to_numpy(data)
-        label_array = self._to_numpy(labels)
-        if len(array) != len(label_array):
-            msg = (
-                f"'data' and 'labels' must have the same length, got "
-                f"{len(array)} and {len(label_array)}"
-            )
-            raise ValueError(msg)
-        counts: dict[tuple[int, int], Counter[Any]] = {
-            (int(i), int(j)): Counter() for i, j in np.ndindex(self._shape)
-        }
-        for instance, label in zip(array, label_array, strict=True):
-            counts[self.winner(instance)].update([label])
-        return counts
+        return label_map(
+            to_numpy(data),
+            to_numpy(labels),
+            self._weights,
+            self._shape,
+            self._distance_function,
+        )
+
+    # ------------------------------------------------------------------ training
 
     def train(
         self,
@@ -390,7 +310,7 @@ class SOM:
         :raises ValueError: If ``mode`` is unknown, if the dataset is empty, or if batch training
             is combined with a signed neighborhood function.
         """
-        array = self._to_numpy(data)
+        array = to_numpy(data)
         if len(array) == 0:
             msg = "Cannot train on an empty dataset"
             raise ValueError(msg)
@@ -450,12 +370,7 @@ class SOM:
         return iterable
 
     def _train_stepwise(
-        self,
-        array: npt.NDArray[Any],
-        n_iteration: int,
-        *,
-        mode: str,
-        verbose: bool,
+        self, array: npt.NDArray[Any], n_iteration: int, *, mode: str, verbose: bool
     ) -> None:
         """Train one sample at a time, updating the winner and its neighbourhood.
 
@@ -482,27 +397,16 @@ class SOM:
             alpha = self._learning_rate_decay(self._learning_rate, t, n_iteration)
             sigma = self._sigma(t, n_iteration)
             sample = array[index]
-            winner = self.winner(sample)
-            self._weights += (
-                alpha * self.neighborhood(winner, sigma)[..., None] * (sample - self._weights)
+            winning = self.winner(sample)
+            self._weights = stepwise_update(
+                self._weights, sample, self.neighborhood(winning, sigma), alpha
             )
 
     def _train_batch(self, array: npt.NDArray[Any], n_iteration: int, *, verbose: bool) -> None:
         """Train with the batch algorithm, updating every model concurrently.
 
-        Implements Eq. (8) of Kohonen (2013),
-        ``m_i = sum_j n_j h_ji xbar_j / sum_j n_j h_ji``, where ``n_j`` is the number of samples
-        mapped to node ``j`` and ``xbar_j`` their mean.
-
-        Two departures from a naive transcription:
-
-        - Models whose neighbourhood contains no data keep their previous value. Starting from a
-          zeroed array instead would destroy them; on a 30x30 map with 20 samples and a small
-          radius, that wiped 282 of 900 models in a single step.
-        - The per-node sums are contracted with NumPy rather than looped over in Python. The
-          neighbourhood is evaluated once per node and contracted against the per-node sums and
-          counts, which avoids materialising the full ``(x, y, x, y)`` tensor. That tensor would be
-          faster still but costs ``(x*y)**2`` floats, about 800 MB for a 100x100 map.
+        Implements Eq. (8) of Kohonen (2013). The winner map is recomputed from the models as they
+        stood at the start of each iteration, which is what makes the update concurrent.
 
         :param array: Training dataset.
         :param n_iteration: Number of iterations.
@@ -510,140 +414,60 @@ class SOM:
         """
         for t in self._progress(range(n_iteration), n_iteration, verbose=verbose):
             sigma = self._sigma(t, n_iteration)
-            sums, counts = self._accumulate(array)
+            sums, counts = accumulate(array, self._weights, self._shape, self._distance_function)
 
-            new_weights = self._weights.copy()
-            for node in np.ndindex(self._shape):
-                h = self.neighborhood((int(node[0]), int(node[1])), sigma)
-                denominator = float(np.sum(h * counts))
-                if abs(denominator) > _BATCH_DENOMINATOR_TOLERANCE:
-                    new_weights[node] = np.einsum("xy,xyf->f", h, sums) / denominator
-            self._weights = new_weights
+            def neighborhood_of(
+                node: tuple[int, int], radius: float = sigma
+            ) -> npt.NDArray[np.floating]:
+                """Evaluate this iteration's neighborhood centred on ``node``.
 
-    def _accumulate(
-        self, array: npt.NDArray[Any]
-    ) -> tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
-        """Sum the samples mapped to each node, and count them.
+                ``radius`` is a default argument rather than a closure over ``sigma`` so that the
+                value is bound at definition time, once per iteration.
 
-        :param array: Dataset of shape ``(n_samples, n_features)``.
-        :return: The per-node sums of shape ``(x, y, n_features)`` and counts of shape ``(x, y)``.
-        """
-        sums = np.zeros((*self._shape, self._input_len))
-        counts = np.zeros(self._shape)
-        for sample in array:
-            node = self.winner(sample)
-            sums[node] += sample
-            counts[node] += 1
-        return sums, counts
+                :param node: Coordinates of the node whose neighborhood is wanted.
+                :param radius: This iteration's neighborhood radius.
+                :return: Neighborhood weights over the grid.
+                """
+                return self.neighborhood(node, radius)
 
-    def weight_initialization(
-        self,
-        mode: str = "random",
-        **kwargs: Any,  # noqa: ANN401  # each initializer takes a different set
-    ) -> None:
+            self._weights = batch_update(self._weights, sums, counts, neighborhood_of, self._shape)
+
+    # ------------------------------------------------------------------ initialization
+
+    def weight_initialization(self, mode: str = "random", **kwargs: Any) -> None:  # noqa: ANN401
         """Initialize the models of the network.
 
         :param mode: One of ``'random'``, ``'linear'`` or ``'sample'``.
         :param kwargs: Passed through to the chosen initializer. ``'random'`` accepts
             ``sample_mode`` (``'standard_normal'`` or ``'uniform'``); ``'linear'`` and ``'sample'``
             require ``data``.
-        :raises ValueError: If ``mode`` is unknown.
+        :raises ValueError: If ``mode`` is unknown, or if the arguments do not suit it.
         """
-        modes: dict[str, Callable[..., None]] = {
-            "random": self._init_random,
-            "linear": self._init_linear,
-            "sample": self._init_sample,
-        }
-        if mode not in modes:
+        if mode not in INITIALIZATION_MODES:
             msg = (
                 f"Invalid value for 'mode' parameter: {mode!r}. "
                 f"Value should be one of {list(INITIALIZATION_MODES)}"
             )
             raise ValueError(msg)
-        modes[mode](**kwargs)
-
-    def _init_random(self, sample_mode: str = "standard_normal") -> None:
-        """Draw every model from a random distribution.
-
-        :param sample_mode: Either ``'standard_normal'`` or ``'uniform'``.
-        :raises ValueError: If ``sample_mode`` is unknown.
-        """
-        if sample_mode == "standard_normal":
-            self._weights = self._rng.standard_normal(size=self._weights.shape)
-        elif sample_mode == "uniform":
-            self._weights = self._rng.random(size=self._weights.shape)
-        else:
-            msg = (
-                f"Invalid value for 'sample_mode' parameter: {sample_mode!r}. "
-                "Value should be one of ['standard_normal', 'uniform']"
-            )
-            raise ValueError(msg)
-
-    def _init_linear(self, data: DataLike) -> None:
-        """Spread the models over the plane of the two largest principal components.
-
-        Kohonen (2013) Section 4.3: "much faster and convergence follow if the initial values are
-        selected as a regular, two-dimensional sequence of vectors taken along a hyperplane spanned
-        by the two largest principal components of x (i.e., principal components associated with
-        the two highest eigenvalues)". This is the recommended initializer, and unlike the others
-        it is deterministic.
-
-        Each model is ``mean + c1 * sqrt(lambda_1) * v1 + c2 * sqrt(lambda_2) * v2`` with ``c1``,
-        ``c2`` evenly spaced over ``[-1, 1]``, so the models span the principal plane and are
-        centred on the data. PCA is fitted on the raw data, not on standardized data, so the models
-        live in the same space as the inputs they are compared against during training.
-
-        :param data: Dataset to run PCA on.
-        :raises ValueError: If the dataset has fewer than two samples or features.
-        """
-        array = self._to_numpy(data).astype(float)
-        if min(array.shape) < _MIN_PCA_DIMENSIONS:
-            msg = (
-                "Linear initialization needs at least 2 samples and 2 features, got shape "
-                f"{array.shape}"
-            )
-            raise ValueError(msg)
-        pca = sklearn.decomposition.PCA(n_components=2, random_state=0)
-        pca.fit(array)
-        components = pca.components_
-        scale = np.sqrt(pca.explained_variance_)
-        for i, c1 in enumerate(np.linspace(-1, 1, num=self._shape[0])):
-            for j, c2 in enumerate(np.linspace(-1, 1, num=self._shape[1])):
-                self._weights[i, j] = (
-                    pca.mean_ + c1 * scale[0] * components[0] + c2 * scale[1] * components[1]
+        try:
+            if mode == "random":
+                self._weights = random_models(
+                    self._shape,
+                    self._input_len,
+                    self._rng,
+                    sample_mode=kwargs.pop("sample_mode", "standard_normal"),
                 )
-
-    def _init_sample(self, data: DataLike) -> None:
-        """Set every model to a randomly chosen sample from ``data``.
-
-        :param data: Dataset to sample from.
-        """
-        array = self._to_numpy(data)
-        size = self._shape[0] * self._shape[1]
-        chosen = self._rng.choice(len(array), size=size, replace=size > len(array))
-        self._weights = array[chosen].reshape(self._weights.shape).astype(float)
-
-    @staticmethod
-    def _to_numpy(
-        data: DataLike,
-    ) -> npt.NDArray[Any]:
-        """Convert a DataFrame, Series, list or array to a NumPy array.
-
-        This is the library's data-input boundary: everything downstream of it works on
-        ``np.ndarray`` only.
-
-        The pandas branch is strictly redundant. ``np.asarray`` already converts a DataFrame or a
-        Series through the ``__array__`` protocol, with identical results including for nullable
-        extension dtypes. It is kept here only so that removing the pandas dependency is its own
-        reviewable change rather than a side effect of this one.
-
-        :param data: Input data.
-        :return: The data as a NumPy array.
-        """
-        if isinstance(data, pd.DataFrame | pd.Series):
-            return data.to_numpy()
-        return np.asarray(data)
-
-
-#: Names of the available neighborhood functions.
-AVAILABLE_NEIGHBORHOOD_FUNCTIONS = tuple(sorted(NEIGHBORHOOD_FUNCTIONS))
+            elif mode == "linear":
+                self._weights = linear_models(to_numpy(kwargs.pop("data")), self._shape)
+            else:
+                self._weights = sample_models(to_numpy(kwargs.pop("data")), self._shape, self._rng)
+        except KeyError as exc:
+            # Without this the caller sees a bare KeyError naming the missing key and nothing else.
+            msg = f"{mode!r} initialization requires a {exc} argument"
+            raise ValueError(msg) from exc
+        if kwargs:
+            msg = (
+                f"Unexpected argument(s) for {mode!r} initialization: {sorted(kwargs)}. "
+                f"Valid modes are {list(INITIALIZATION_MODES)}."
+            )
+            raise ValueError(msg)

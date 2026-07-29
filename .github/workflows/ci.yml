@@ -24,6 +24,11 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
+          # Pinned deliberately. pandas-stubs requires >=3.11, so on 3.10 pandas is untyped and
+          # mypy reports dozens of errors that say nothing about the code. A type-check gate must
+          # not depend on whichever interpreter the runner happens to default to.
+          python-version: "3.12"
+
       - run: uv sync --all-extras
       - name: ruff check
         run: uv run ruff check --output-format=github .

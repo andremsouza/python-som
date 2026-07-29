@@ -1,0 +1,44 @@
+# The architecture this package is written to, declared so it can be checked rather than assumed.
+#
+# Style: functional-core+ports. `python_som._core` is pure functions over NumPy arrays; the shell
+# around it (`_som.py`, `_convert.py`) holds state, validation, progress output, and the pandas
+# adapter. See docs/ and `src/python_som/_core/__init__.py` for the rule in prose.
+#
+# The rule that matters day to day — the core imports nothing but NumPy — is enforced in CI by
+# ruff's TID251 (see `[tool.ruff.lint.flake8-tidy-imports.banned-api]` in pyproject.toml) and by
+# tests/test_core_boundary.py. This file is not run in CI: the checker that reads it is a
+# proprietary local review aid, not redistributable, so it cannot be a required check on a public
+# MIT repository. The profile ships anyway, because the declared architecture is worth stating in
+# the repository rather than only in a plan, and because the local checker needs something to read.
+#
+# It reports 0 ERROR and 13 WARN today, and passes `--strict`. Both WARN kinds are expected, and are
+# written down here so a reviewer does not read them as regressions:
+#
+#   - No provenance marker. PR #10 adds `TrainingReport`, which is what the preset is asking for.
+#
+#   - Twelve functions take 4 or 5 positional args against a preset limit of 3, with the advice to
+#     "group into a dataclass". Not taken, and the limit is deliberately left at 3 rather than raised
+#     to make the warnings disappear. `gaussian(shape, center, sigma, cyclic)` is four independent
+#     inputs with no natural grouping; a `NeighborhoodParams` holding four fields for one call site
+#     would be a shallow module, which is the thing this architecture is trying to avoid. Three of
+#     the twelve are also in `__all__`, so their signatures are public until 1.0.0. Loosening a
+#     threshold to fit the code it is measuring would make every future reading of it meaningless.
+
+[tool.architecture-conformance]
+preset = "functional-core+ports"
+
+# Only the core is the core. With `["python_som"]` the whole package would be core, the pandas
+# import in the adapter would violate the dependency rule, and the allowlist would have to be
+# loosened until it checked nothing.
+core_packages = ["python_som._core"]
+
+# NumPy is the core's one intended dependency. sklearn is here for `_core/_linalg.py` alone, and
+# PR #8 replaces it with `np.linalg.svd`, at which point this becomes `["numpy"]`. scipy is
+# deliberately absent from the preset default: it arrives transitively through sklearn but nothing
+# here imports it, and an allowlist should list what is used.
+core_allowed_third_party = ["numpy", "sklearn"]
+
+source_roots = ["", "src"]
+
+# The pandas boundary. Informational to the checker; the boundary itself is the dependency rule.
+ports_module = "python_som._convert"
