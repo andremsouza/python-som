@@ -71,34 +71,15 @@ neighborhood function. Use `mode='random'` or `mode='sequential'`; `mode='batch'
 See [Neighborhood functions](https://andremsouza.github.io/python-som/neighborhood-functions/) for
 the derivations, including why the Mexican hat is not an outer product of two 1-D wavelets.
 
-## Behavior changes in 0.3.0
+## Upgrading
 
-0.3.0 corrects several methodology defects. Each changes numerical output, so results are not
-comparable across the boundary.
+0.3.0 corrects several methodology defects, so numerical results are not comparable with earlier
+versions. In particular **`random_seed` no longer reproduces pre-0.3.0 maps**: the generator is now
+per-instance rather than a call to `np.random.seed` on NumPy's global state. To reproduce figures
+made with an older version, pin `python-som==0.2.0`.
 
-**Seeds no longer reproduce older results.** The random generator is now per-instance rather than a
-call to `np.random.seed` on NumPy's global state. That fixes a real side effect, since constructing
-a SOM used to reseed NumPy for the whole host program, but it means `random_seed=42` gives a
-different map. **To reproduce figures made with an earlier version, pin `python-som==0.2.0`.**
-
-Also changed:
-
-* Batch training no longer destroys models whose neighborhood contains no data. They previously
-  became the zero vector; on a 30×30 map with 20 samples, 282 of 900 models were wiped in one step.
-* Linear initialization now spans the principal-component plane. It used the eigen*values* where
-  it needed the eigen*vectors*, so every model came out as a constant vector. PCA is also now fitted
-  on raw data rather than standardized data, so the models share the input space.
-* `sequential` mode honours `n_iteration`. It previously ran one pass over the dataset whatever
-  you asked for.
-* The automatic map-size ratio uses `√(λ₁/λ₂)` rather than the raw eigenvalue ratio, and rounds
-  rather than floor-dividing, so a side length can no longer come out as zero.
-* The neighborhood radius is floored at `min_neighborhood_radius` (default 0.5), per Kohonen
-  Section 4.2.
-* `get_shape()` returns `tuple[int, int]` instead of NumPy integers, so `figsize=som.get_shape()`
-  works.
-* `requires-python` is `>=3.10`, which is what the code actually needs.
-
-The full list, with citations, is in the [changelog](https://github.com/andremsouza/python-som/blob/master/CHANGELOG.md).
+Each change and the passage of Kohonen (2013) behind it is in the
+[changelog](https://github.com/andremsouza/python-som/blob/master/CHANGELOG.md).
 
 ## Development
 

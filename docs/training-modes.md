@@ -33,13 +33,12 @@ the default is 10 per sample against 1000 for the stepwise modes.
 
 **Models with no data in their neighborhood keep their previous value.** Building the new weights
 from a zeroed array instead destroys them. On a 30×30 map with 20 samples and a small radius, that
-wiped 282 of 900 models in a single step. Tested by
-`test_batch_never_zeroes_a_model`.
+wiped 282 of 900 models in a single step.
 
 **The per-node sums are contracted with NumPy rather than looped over in Python.** The neighborhood
 is evaluated once per node and contracted against the per-node sums and counts. On a 20×20 map with
-150 samples this runs about 30× faster than the nested Python loop it replaces, and
-`test_batch_matches_a_reference_implementation` asserts the two agree to $10^{-12}$.
+150 samples this runs about 30× faster than the nested Python loop it replaces, and the two agree
+to $10^{-12}$.
 
 The full $(x, y, x, y)$ tensor would be faster still, but it costs $(xy)^2$ floats, roughly 800 MB
 for a 100×100 map, so it is not materialised.
@@ -65,13 +64,6 @@ som.train(data, n_iteration=10_000, mode="sequential")
 
 The same stepwise update, but walking the dataset in order and wrapping around until `n_iteration`
 steps have run.
-
-!!! note "This mode used to ignore `n_iteration`"
-
-    Before 0.3.0 it iterated the dataset exactly once regardless of what you asked for, so
-    requesting 500 iterations over 30 samples ran 30 steps while the decay functions still used 500
-    as their horizon. The learning rate barely moved. Tested by
-    `test_stepwise_runs_the_requested_number_of_iterations`.
 
 ## Choosing the number of iterations
 

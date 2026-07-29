@@ -1,8 +1,8 @@
 # Neighborhood functions
 
 The neighborhood function decides how a winner's correction spreads to the rest of the grid. It is
-the part of the SOM that turns vector quantization into a *topology-preserving* map, and it is where
-this library's subtlest bug lived, so it is worth setting out properly.
+the part of the SOM that turns vector quantization into a *topology-preserving* map, and the part
+where a plausible-looking implementation can be quietly wrong, so it is worth setting out in full.
 
 ## The rule that governs all of them
 
@@ -78,8 +78,6 @@ inhibition will take place that gradually vanishes when the distance becomes ver
     The separable version puts an excitatory lobe worth 16.5% of the winner's strength exactly
     where the function is supposed to inhibit, and along the diagonals it never becomes negative at
     all. Its value is not a function of any metric on the grid.
-
-    This is tested directly: `test_mexican_hat_is_not_the_separable_product` and `test_is_isotropic`.
 
 ### It cannot be used with batch training
 
