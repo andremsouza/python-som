@@ -5,6 +5,27 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The plain-string deprecation introduced in 0.5.0 is withdrawn.** Strings are permanently
+  supported, the `DeprecationWarning` is gone, and 1.0.0 will not remove them. If you migrated to
+  the enums while 0.5.0 was current, nothing you wrote breaks: the enums are staying too.
+
+  0.5.0 was wrong, and the reason is worth stating rather than quietly reverting. Every comparable
+  library passes options as plain strings and none export enums: scikit-learn
+  (`KMeans(init="k-means++")`), numpy (`np.pad(mode="constant")`), scipy
+  (`linkage(method="single")`), and both SOM libraries, minisom and sompy. Removing the string form
+  would have made this the only library in its ecosystem to reject `mode="batch"`.
+
+  The benefit originally claimed for enums was that a type checker catches typos. That is already
+  delivered by the `Literal` unions added in 0.4.0, with strings still working: `mode="bacth"` is a
+  type error while `mode="batch"` is not. The deprecation bought nothing that was not already had.
+
+  The decision was made without checking what comparable libraries do. That check is now part of
+  planning any future API change.
+
 ## [0.5.0] - 2026-07-30
 
 One change: the plain-string options now warn. Nothing else moves, and no result changes.

@@ -52,7 +52,6 @@ from ._enums import (
     TrainingModeStr,
     WeightInit,
     WeightInitStr,
-    warn_if_string,
 )
 from ._version import __version__
 
@@ -272,7 +271,6 @@ class SOM:
         self._min_neighborhood_radius = float(min_neighborhood_radius)
         self._neighborhood_function_name = neighborhood_function
         self._neighborhood_function: NeighborhoodFunction = resolve(neighborhood_function)
-        warn_if_string(neighborhood_function, Neighborhood, "neighborhood_function")
         self._distance_function = distance_function
         self._cyclic = (bool(cyclic_x), bool(cyclic_y))
 
@@ -442,7 +440,6 @@ class SOM:
                 f"Value should be one of {list(TRAINING_MODES)}"
             )
             raise ValueError(msg)
-        warn_if_string(mode, TrainingMode, "mode")
         if mode == "batch" and self._neighborhood_function_name in SIGNED_NEIGHBORHOODS:
             msg = (
                 f"The {str(self._neighborhood_function_name)!r} neighborhood function cannot be "
@@ -756,9 +753,6 @@ class SOM:
                 f"Value should be one of {list(INITIALIZATION_MODES)}"
             )
             raise ValueError(msg)
-        warn_if_string(mode, WeightInit, "mode")
-        if "sample_mode" in kwargs:
-            warn_if_string(kwargs["sample_mode"], SampleMode, "sample_mode")
         try:
             if mode == "random":
                 self._weights = random_models(

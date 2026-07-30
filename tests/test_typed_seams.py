@@ -8,7 +8,6 @@ that a learning rate which could never have trained is now rejected instead of s
 from __future__ import annotations
 
 import json
-import re
 import warnings
 from typing import TYPE_CHECKING
 
@@ -94,9 +93,9 @@ def test_every_neighborhood_member_resolves() -> None:
 # ---------------------------------------------------------------------------------------------
 # Enums and strings are interchangeable at every call site that takes one
 #
-# From 0.5.0 a plain string also warns, so each of these asserts both halves: the string still does
-# exactly what the enum does, *and* it says it is going away. The warning is the point of the
-# release, so it is asserted rather than filtered out.
+# Both spellings are permanent, so these assert only that they agree. 0.5.0 briefly made the string
+# form warn and each of these wrapped the string call in `pytest.warns`; 0.6.0 withdrew that, so the
+# wrappers are gone rather than loosened.
 # ---------------------------------------------------------------------------------------------
 
 
@@ -115,8 +114,7 @@ def test_training_accepts_either_spelling_with_identical_results(
     first = make_som(x=6, y=5)
     second = make_som(x=6, y=5)
     error_enum = first.train(blobs, n_iteration=15, mode=as_enum)
-    with pytest.warns(DeprecationWarning, match=f"mode={as_string!r}"):
-        error_string = second.train(blobs, n_iteration=15, mode=as_string)  # type: ignore[arg-type]
+    error_string = second.train(blobs, n_iteration=15, mode=as_string)  # type: ignore[arg-type]
 
     assert error_enum == error_string
     np.testing.assert_array_equal(first.get_weights(), second.get_weights())
@@ -132,22 +130,16 @@ def test_weight_initialization_accepts_either_spelling(
     from_enum = som.get_weights().copy()
 
     other = make_som(x=5, y=4)
-    with pytest.warns(DeprecationWarning, match=f"mode={member.value!r}"):
-        other.weight_initialization(mode=member.value, **kwargs)
+    other.weight_initialization(mode=member.value, **kwargs)
     np.testing.assert_array_equal(from_enum, other.get_weights())
 
 
 @pytest.mark.parametrize("member", list(Neighborhood))
 def test_the_constructor_accepts_either_spelling(member: Neighborhood) -> None:
     from_enum = python_som.SOM(x=4, y=4, input_len=3, neighborhood_function=member, random_seed=1)
-    with pytest.warns(DeprecationWarning, match=f"neighborhood_function={member.value!r}"):
-        from_string = python_som.SOM(
-            x=4,
-            y=4,
-            input_len=3,
-            neighborhood_function=member.value,
-            random_seed=1,
-        )
+    from_string = python_som.SOM(
+        x=4, y=4, input_len=3, neighborhood_function=member.value, random_seed=1
+    )
     np.testing.assert_array_equal(
         from_enum.neighborhood((2, 2), 1.5), from_string.neighborhood((2, 2), 1.5)
     )
@@ -158,8 +150,7 @@ def test_sample_mode_accepts_either_spelling() -> None:
         first = make_som(x=4, y=4)
         first.weight_initialization(mode=WeightInit.RANDOM, sample_mode=mode)
         second = make_som(x=4, y=4)
-        with pytest.warns(DeprecationWarning, match=f"sample_mode={mode.value!r}"):
-            second.weight_initialization(mode=WeightInit.RANDOM, sample_mode=mode.value)
+        second.weight_initialization(mode=WeightInit.RANDOM, sample_mode=mode.value)
         np.testing.assert_array_equal(first.get_weights(), second.get_weights())
 
 
@@ -257,117 +248,77 @@ def test_the_warning_points_at_the_caller() -> None:
 
 
 # ---------------------------------------------------------------------------------------------
-# The deprecation itself
+# No deprecation: strings are permanent
 # ---------------------------------------------------------------------------------------------
-
-#: Each valid plain-string spelling, with the replacement its warning must name.
-DEPRECATED_SPELLINGS = [
-    (
-        "train-mode",
-        lambda som, data: som.train(data, n_iteration=5, mode="batch"),
-        "TrainingMode.BATCH",
-    ),
-    (
-        "init-mode",
-        lambda som, data: som.weight_initialization(mode="linear", data=data),
-        "WeightInit.LINEAR",
-    ),
-    (
-        "sample-mode",
-        lambda som, _data: som.weight_initialization(mode=WeightInit.RANDOM, sample_mode="uniform"),
-        "SampleMode.UNIFORM",
-    ),
-]
-
-#: Spellings that never named anything. These must raise, not warn.
-INVALID_SPELLINGS = [
-    ("bad-train-mode", lambda som, data: som.train(data, n_iteration=1, mode="stochastic")),
-    ("bad-init-mode", lambda som, _data: som.weight_initialization(mode="spectral")),
-    (
-        "bad-sample-mode",
-        lambda som, _data: som.weight_initialization(mode=WeightInit.RANDOM, sample_mode="cauchy"),
-    ),
-]
 
 
 @pytest.mark.parametrize(
-    ("call", "expected"),
-    [(c, e) for _, c, e in DEPRECATED_SPELLINGS],
-    ids=[i for i, _, _ in DEPRECATED_SPELLINGS],
+    "call",
+    [
+        lambda som, data: som.train(data, n_iteration=5, mode="batch"),
+        lambda som, data: som.weight_initialization(mode="linear", data=data),
+        lambda som, _d: som.weight_initialization(mode=WeightInit.RANDOM, sample_mode="uniform"),
+        lambda som, _d: som.weight_initialization(mode="random"),
+    ],
+    ids=["train-mode", "init-mode", "sample-mode", "init-random"],
 )
-def test_the_warning_names_the_exact_replacement(
-    call: Callable[[python_som.SOM, np.ndarray], object], expected: str
+def test_a_plain_string_emits_no_warning(
+    call: Callable[[python_som.SOM, np.ndarray], object],
 ) -> None:
-    """A deprecation that makes the reader work out the substitution is one they will silence."""
+    """0.5.0 made these warn and 0.6.0 withdrew it. This is the guard for that withdrawal.
+
+    Every comparable library takes options as strings -- scikit-learn, numpy, scipy, and both SOM
+    peers -- and none export enums. Deprecating the string form would have made this the only
+    library in its ecosystem to reject ``mode="batch"``.
+
+    ``simplefilter("error")`` rather than ``pytest.warns(None)``, which pytest removed: any warning
+    at all fails here, not merely a ``DeprecationWarning``.
+    """
     som = make_som(x=5, y=4)
     data = np.random.default_rng(1).normal(size=(20, 3))
-    with pytest.warns(DeprecationWarning, match=re.escape(expected)):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
         call(som, data)
 
 
-def test_the_legacy_neighborhood_spelling_warns_toward_the_canonical_member() -> None:
-    """``mexicanhat`` has no member of its own, so the message names the one that replaces it."""
-    with pytest.warns(DeprecationWarning, match=re.escape("Neighborhood.MEXICAN_HAT")):
-        python_som.SOM(
+def test_the_legacy_neighborhood_spelling_still_works_silently() -> None:
+    """``mexicanhat`` predates the ``mexican_hat`` spelling and keeps working, without complaint."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        som = python_som.SOM(
             x=4,
             y=4,
             input_len=3,
             neighborhood_function="mexicanhat",
         )
+    assert som.neighborhood((2, 2), 1.0).shape == (4, 4)
 
 
 @pytest.mark.parametrize(
-    "call", [c for _, c in INVALID_SPELLINGS], ids=[i for i, _ in INVALID_SPELLINGS]
+    "call",
+    [
+        lambda som, data: som.train(data, n_iteration=1, mode="stochastic"),
+        lambda som, _d: som.weight_initialization(mode="spectral"),
+        lambda som, _d: som.weight_initialization(mode=WeightInit.RANDOM, sample_mode="cauchy"),
+    ],
+    ids=["bad-train-mode", "bad-init-mode", "bad-sample-mode"],
 )
-def test_an_invalid_string_raises_rather_than_warning(
+def test_an_invalid_string_still_raises(
     call: Callable[[python_som.SOM, np.ndarray], object],
 ) -> None:
-    """A spelling that never worked is an error, not a deprecation.
-
-    Warning would bury the real mistake under a notice telling the caller to modernise something
-    that was never valid, and under ``-W error`` would replace the ``ValueError`` outright.
-    """
+    """Supporting strings is not the same as accepting any string."""
     som = make_som(x=5, y=4)
     data = np.random.default_rng(1).normal(size=(20, 3))
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        with pytest.raises(ValueError, match=r"Invalid value|sample_mode"):
-            call(som, data)
-
-
-def test_an_enum_never_warns() -> None:
-    """The whole point: migrating removes the warning."""
-    data = np.random.default_rng(2).normal(size=(30, 3))
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        som = python_som.SOM(
-            x=5, y=4, input_len=3, neighborhood_function=Neighborhood.GAUSSIAN, random_seed=3
-        )
-        som.weight_initialization(mode=WeightInit.RANDOM, sample_mode=SampleMode.UNIFORM)
-        som.train(data, n_iteration=5, mode=TrainingMode.BATCH)
-
-
-def test_the_deprecation_warning_blames_the_caller() -> None:
-    """``stacklevel`` must point at the user's line, not at a line inside this package."""
-    som = make_som(x=4, y=4)
-    with pytest.warns(DeprecationWarning, match="deprecated") as caught:
-        som.weight_initialization(mode="random")
-    assert caught[0].filename == __file__, f"warning blamed {caught[0].filename}"
+    with pytest.raises(ValueError, match=r"Invalid value|sample_mode"):
+        call(som, data)
 
 
 def test_error_messages_read_the_same_for_both_spellings() -> None:
-    """An enum member's repr is ``<WeightInit.LINEAR: 'linear'>``, which has no place in an error.
-
-    Regression: the messages interpolated the value directly, so passing an enum produced
-    ``<WeightInit.LINEAR: 'linear'> initialization requires ...``.
-    """
+    """An enum's repr is ``<WeightInit.LINEAR: 'linear'>``, which does not belong in an error."""
     som = make_som(x=4, y=4)
     with pytest.raises(ValueError, match="initialization requires") as from_enum:
         som.weight_initialization(mode=WeightInit.LINEAR)
-    with (
-        pytest.warns(DeprecationWarning, match="deprecated"),
-        pytest.raises(ValueError, match="initialization requires") as from_string,
-    ):
+    with pytest.raises(ValueError, match="initialization requires") as from_string:
         som.weight_initialization(mode="linear")
     assert str(from_enum.value) == str(from_string.value)
     assert "WeightInit." not in str(from_enum.value)
