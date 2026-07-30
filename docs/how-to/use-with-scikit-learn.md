@@ -8,10 +8,10 @@ not going away.
 som = python_som.SOM(x=10, y=10, input_len=4, random_seed=42)
 som.weight_initialization(mode=WeightInit.LINEAR, data=X)
 
-som.fit(X, n_iteration=100, mode=TrainingMode.BATCH)   # returns the map, so calls chain
-labels = som.predict(X)                                 # (n_samples,)  flat node index
-distances = som.transform(X)                            # (n_samples, x*y)
-som.score(X)                                            # negated quantization error
+som.fit(X, n_iteration=100, mode=TrainingMode.BATCH)  # returns the map, so calls chain
+labels = som.predict(X)  # (n_samples,)  flat node index
+distances = som.transform(X)  # (n_samples, x*y)
+som.score(X)  # negated quantization error
 ```
 
 ## What maps onto what
