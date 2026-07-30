@@ -25,7 +25,12 @@ from ._core._initialize import linear_models, random_models, sample_models
 from ._core._linalg import auto_dimensions
 from ._core._maps import activation_matrix, label_map, u_matrix, winner_map
 from ._core._match import accumulate, activate, quantization, winner
-from ._core._neighborhood import SIGNED_NEIGHBORHOODS, resolve
+from ._core._neighborhood import (
+    SIGNED_NEIGHBORHOODS,
+    kernel_view,
+    resolve,
+    resolve_kernel,
+)
 from ._core._update import batch_update, stepwise_update
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -408,27 +413,38 @@ class SOM:
         Implements Eq. (8) of Kohonen (2013). The winner map is recomputed from the models as they
         stood at the start of each iteration, which is what makes the update concurrent.
 
+        The neighborhood is evaluated **once per iteration**, not once per node. Eq. (8) needs
+        ``h_ji`` for every pair of nodes, and a neighborhood depends only on the offset between the
+        two -- so a single kernel over every offset serves the whole grid, and each node's
+        neighborhood is a slice of it. Evaluating per node instead made the neighborhood 42% of
+        batch training on a 40x40 map, more than the contraction it feeds; measured end to end, the
+        kernel is worth **1.2x to 1.5x**, more with the gaussian than the cheaper bubble. See
+        :func:`~python_som._core._neighborhood.offset_span` for why the offset-only dependence holds
+        on a torus as well as a flat grid, and ``benchmarks/bench_batch.py`` for the measurement.
+
         :param array: Training dataset.
         :param n_iteration: Number of iterations.
         :param verbose: Whether to show a progress bar.
         """
+        build_kernel = resolve_kernel(self._neighborhood_function_name)
         for t in self._progress(range(n_iteration), n_iteration, verbose=verbose):
             sigma = self._sigma(t, n_iteration)
             sums, counts = accumulate(array, self._weights, self._shape, self._distance_function)
+            kernel = build_kernel(self._shape, sigma, self._cyclic)
 
             def neighborhood_of(
-                node: tuple[int, int], radius: float = sigma
+                node: tuple[int, int], evaluated: npt.NDArray[np.floating] = kernel
             ) -> npt.NDArray[np.floating]:
-                """Evaluate this iteration's neighborhood centred on ``node``.
+                """Take this iteration's neighborhood for ``node`` out of the kernel.
 
-                ``radius`` is a default argument rather than a closure over ``sigma`` so that the
-                value is bound at definition time, once per iteration.
+                ``evaluated`` is a default argument rather than a closure over ``kernel`` so that
+                the value is bound at definition time, once per iteration.
 
                 :param node: Coordinates of the node whose neighborhood is wanted.
-                :param radius: This iteration's neighborhood radius.
-                :return: Neighborhood weights over the grid.
+                :param evaluated: This iteration's kernel.
+                :return: Neighborhood weights over the grid, as a view into the kernel.
                 """
-                return self.neighborhood(node, radius)
+                return kernel_view(evaluated, self._shape, node)
 
             self._weights = batch_update(self._weights, sums, counts, neighborhood_of, self._shape)
 
