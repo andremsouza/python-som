@@ -29,7 +29,10 @@ jobs:
           # not depend on whichever interpreter the runner happens to default to.
           python-version: "3.12"
 
-      - run: uv sync --all-extras
+      # Named rather than --all-extras: the `analysis` extra holds review tools (bandit, pip-audit,
+      # pylint) that no CI job runs, so installing them here would be dead weight on every matrix
+      # entry. `examples` is needed because tests/test_end_to_end.py imports matplotlib.
+      - run: uv sync --extra dev --extra docs --extra examples --extra cli
       - name: ruff check
         run: uv run ruff check --output-format=github .
       - name: ruff format
@@ -50,7 +53,10 @@ jobs:
         with:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
-      - run: uv sync --all-extras
+      # Named rather than --all-extras: the `analysis` extra holds review tools (bandit, pip-audit,
+      # pylint) that no CI job runs, so installing them here would be dead weight on every matrix
+      # entry. `examples` is needed because tests/test_end_to_end.py imports matplotlib.
+      - run: uv sync --extra dev --extra docs --extra examples --extra cli
       - name: pytest
         run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
 

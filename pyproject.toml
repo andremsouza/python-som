@@ -68,6 +68,33 @@ docs = [
     "mkdocs-material==9.7.7",
     "mkdocstrings-python==2.0.5",
 ]
+# Static analysis used during review, kept out of `dev` so the CI jobs that never run it do not
+# install it. Pinned exactly, like the rest of the tooling. Nothing here gates a merge: ruff and mypy
+# are the enforced checks, and these are for the deeper passes a human asks for.
+#
+# `osv-scanner` is deliberately absent. The real tool is a Go binary from Google; the PyPI package of
+# that name was registered on 2026-07-16 with one release, no author, no home page, and a summary of
+# "Reserved name placeholder. No functionality." Install the Go binary if you want it.
+#
+# `guarddog` is also absent: genuine (DataDog) but first released 2022-11-28, three months *after*
+# this project, so it fails the rule that a dependency should predate what it is added to. Add it
+# deliberately if the supply-chain checks are wanted, not as part of a batch.
+#
+# `semgrep` was added and then removed. It pins `mcp==1.23.3` exactly, and that version carries
+# PYSEC-2026-3481/3482/3483 (fixed in mcp 1.27.2/1.28.1) -- so the exact pin makes the advisories
+# unremediable from here, and 1.172.0 is already the latest semgrep. Against that, bandit reports
+# nothing in `src/`, and this is a pure-numpy library with no network, auth, crypto, SQL or
+# templating, which is most of what semgrep's rulesets look for. Low coverage gained for three CVEs
+# that cannot be patched. Revisit if semgrep relaxes the pin.
+analysis = [
+    # PyCQA, first released 2015. Security-oriented AST checks.
+    "bandit==1.9.4",
+    # PyPA. Reports known CVEs in the resolved dependency set; expected to report none.
+    "pip-audit==2.10.1",
+    # PyCQA, first released 2009. Not wired into any gate; here so the findings a contributor's IDE
+    # reports can be reproduced from the command line.
+    "pylint==4.0.6",
+]
 # Restores the install set that 0.3.0 pulled in by default, for anyone who was relying on it.
 examples = [
     "matplotlib>=3.8",
@@ -205,3 +232,9 @@ exclude_lines = [
     # entire content is an ellipsis, which in this package occurs solely in _core/_protocols.py.
     "^\\s*\\.\\.\\.$",
 ]
+
+[tool.bandit]
+# `assert` is how a test states its expectation, so B101 fires on every one of them and says nothing.
+# Excluded by directory rather than by skipping the check, so B101 still applies to `src/`, where an
+# assert *would* be wrong: asserts vanish under `python -O`, so validation must raise instead.
+exclude_dirs = ["tests", ".venv", "site", "dist"]
