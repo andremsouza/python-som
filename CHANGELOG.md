@@ -9,6 +9,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`python_som.sklearn.SOMEstimator`**, a scikit-learn estimator, behind a new `sklearn` extra:
+
+  ```bash
+  pip install "python-som[sklearn]"
+  ```
+
+  The methods on `SOM` are enough when you call them yourself. They are not enough when scikit-learn
+  does the calling: since 1.7, `Pipeline.predict`, `GridSearchCV` and `cross_val_score` all require
+  `__sklearn_tags__`, which in practice means inheriting `BaseEstimator`. So the integration lives in
+  its own module and scikit-learn stays optional. Importing `python_som` still pulls in nothing but
+  NumPy, which a test asserts in a subprocess.
+
+  `input_len` is absent from its constructor, since scikit-learn infers the feature count from `X`.
+  Unlike `SOM.fit`, the estimator's `fit` starts over rather than continuing, because `GridSearchCV`
+  fits one cloned estimator fold after fold and carrying weights across folds would leak one into the
+  next.
+
+  All five integration points have tests that call the real library rather than asserting about it:
+  `clone`, `Pipeline.fit`, `Pipeline.predict`, `GridSearchCV`, `cross_val_score`.
+
 - **An estimator interface on `SOM`**: `fit`, `transform`, `predict`, `fit_transform`, `score`,
   `get_params` and `set_params`, modelled on `KMeans`. `train` remains the primary way to train and
   is unchanged, so nothing existing is affected.
