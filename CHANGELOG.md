@@ -5,7 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-07-30
+
+`numpy` is now the only runtime dependency, and a trained map can be saved without `pickle`.
+
+**Results change in two places.** Linear initialization is corrected for data far from the origin,
+where 0.3.0 was wrong by up to 5.8%; and anyone who imported pandas or scikit-learn transitively
+through this package must now depend on them directly. Everything else is additive: no public name or
+signature is removed, and `mode="batch"` and the other plain strings keep working.
+
+To reproduce a figure made with an earlier version, pin that version.
 
 ### Added
 
