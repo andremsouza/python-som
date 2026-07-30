@@ -60,40 +60,30 @@ when the value comes from outside the program.
 The legacy spelling `"mexicanhat"` still resolves and is still accepted, but has no enum member:
 one canonical spelling per option is most of the point of having an enum.
 
-## Deprecation timetable for plain strings
+## Both spellings are permanent
 
-| Version | What happens |
+Neither form is deprecated and neither is going away.
+
+0.5.0 briefly made plain strings emit `DeprecationWarning`, announcing removal in 1.0.0. **0.6.0
+withdrew that.** If you migrated in between, your code still works and nothing is wasted beyond the
+time; the enums are staying too.
+
+The reason for the reversal is that every comparable library passes options as strings:
+
+| library | how options are passed |
 | --- | --- |
-| 0.4.0 | Enums added. Strings accepted, no warning. |
-| **0.5.0 (current)** | Strings emit `DeprecationWarning`. |
-| 1.0.0 | Strings removed; the enums become the only accepted form. |
+| scikit-learn | `KMeans(init="k-means++", algorithm="lloyd")` |
+| numpy | `np.pad(mode="constant")`, `np.linalg.norm(ord="fro")` |
+| scipy | `linkage(method="single")`, `minimize(method="BFGS")` |
+| minisom | `neighborhood_function="gaussian"`, `topology="rectangular"` |
+| sompy | `normalization="var"`, `neighborhood="gaussian"` |
 
-0.4.0 deliberately warned about nothing, because `mode="batch"` was what this documentation showed
-until that release. The written notice came first, and this is the warning that follows it.
+None of them export enums at all. Removing the string form would have made this the only library in
+its ecosystem to reject `mode="batch"`, a worse trade than any tidiness it bought.
 
-The warning names the exact replacement, so migrating is a substitution you read off the message:
-
-```
-DeprecationWarning: Passing mode='batch' as a plain string is deprecated and will
-stop working in 1.0.0. Use TrainingMode.BATCH instead.
-```
-
-Two things it deliberately does not do. It does not fire for a spelling that was never valid, so
-`mode="stochastic"` still raises its `ValueError` rather than burying the real mistake under a
-notice about modernising something that never worked. And it does not fire when a map is loaded
-from an artifact: the name in a `.npz` is a serialisation detail, since JSON has no enums, so the
-loader converts it rather than warning you about a string you never wrote.
-
-To silence it while you migrate:
-
-```python
-import warnings
-
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="python_som")
-```
-
-Migrating early costs nothing and is a mechanical substitution: `"batch"` becomes
-`TrainingMode.BATCH`, and so on down the table above.
+The argument originally made for enums was that a type checker catches typos. That benefit is real
+and already delivered by the `Literal` unions above, without removing anything: `mode="bacth"` is a
+type error today while `mode="batch"` is not.
 
 ## Learning rate
 
