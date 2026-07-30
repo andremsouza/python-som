@@ -327,26 +327,38 @@ def test_no_public_method_that_0_3_0_shipped_has_been_removed() -> None:
 def test_the_public_methods_are_exactly_these() -> None:
     """Pin the whole set, so growing it is deliberate.
 
-    0.4.0 adds ``config``, ``save_npz`` and ``load_npz``. ``last_report`` is a property rather than
-    a method, so it does not appear here; ``tests/test_artifacts.py`` covers it.
+    0.6.0 adds the estimator interface: ``fit``, ``fit_transform``, ``transform``, ``predict``,
+    ``score``, ``get_params``, ``set_params``. All additive, all delegating to methods that already
+    existed. ``train`` remains the primary way to train.
+
+    The properties the same release adds (``weights_``, ``n_features_in_``, ``quantization_error_``,
+    ``last_report``) are not methods and so do not appear here; ``tests/test_estimator.py`` covers
+    them.
     """
     assert _public_methods() == [
         "activate",
         "activation_matrix",
         "config",
         "distance_matrix",
+        "fit",
+        "fit_transform",
+        "get_params",
         "get_random_seed",
         "get_shape",
         "get_weights",
         "label_map",
         "load_npz",
         "neighborhood",
+        "predict",
         "quantization",
         "quantization_error",
         "save_npz",
+        "score",
         "set_learning_rate",
         "set_neighborhood_radius",
+        "set_params",
         "train",
+        "transform",
         "weight_initialization",
         "winner",
         "winner_map",

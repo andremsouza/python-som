@@ -7,6 +7,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **An estimator interface on `SOM`**: `fit`, `transform`, `predict`, `fit_transform`, `score`,
+  `get_params` and `set_params`, modelled on `KMeans`. `train` remains the primary way to train and
+  is unchanged, so nothing existing is affected.
+
+  `predict` returns a **flat** node index rather than `(row, column)`, because a 1-D label array is
+  what scorers, `confusion_matrix` and `cross_val_score` assume;
+  `np.unravel_index(som.predict(X), som.get_shape())` recovers the grid position, and `winner()`
+  still returns coordinates. `score` is the *negated* quantization error, since `GridSearchCV`
+  maximises and without the sign a search would select the worst map.
+
+  Fitted attributes follow the convention: `weights_` for `cluster_centers_`,
+  `quantization_error_` for `inertia_`, plus `n_features_in_`.
+
+  Two deliberate differences from scikit-learn, both documented: `fit` *continues* rather than
+  resetting, because a SOM's models are its state; and the models exist before training, since
+  initialization is a separate step.
+
+  `set_params` changes the rates, radii, decays and distance function. It refuses to change the grid
+  shape or `input_len`, which would leave a map whose models no longer match its own description.
+  It is what `set_learning_rate` and `set_neighborhood_radius` become; both still work.
+
+  These names alone are **not** enough for `Pipeline.predict` or `GridSearchCV`, which since
+  scikit-learn 1.7 require `__sklearn_tags__`. A separate `python_som.sklearn` adapter follows.
+
 ### Changed
 
 - **The plain-string deprecation introduced in 0.5.0 is withdrawn.** Strings are permanently
