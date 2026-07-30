@@ -17,14 +17,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   The methods on `SOM` are enough when you call them yourself. They are not enough when scikit-learn
   does the calling: since 1.7, `Pipeline.predict`, `GridSearchCV` and `cross_val_score` all require
-  `__sklearn_tags__`, which in practice means inheriting `BaseEstimator`. So the integration lives in
-  its own module and scikit-learn stays optional. Importing `python_som` still pulls in nothing but
-  NumPy, which a test asserts in a subprocess.
+  `__sklearn_tags__`, which in practice means inheriting `BaseEstimator`. So the integration lives
+  in its own module and scikit-learn stays optional. Importing `python_som` still pulls in nothing
+  but NumPy, which a test asserts in a subprocess.
 
   `input_len` is absent from its constructor, since scikit-learn infers the feature count from `X`.
   Unlike `SOM.fit`, the estimator's `fit` starts over rather than continuing, because `GridSearchCV`
-  fits one cloned estimator fold after fold and carrying weights across folds would leak one into the
-  next.
+  fits one cloned estimator fold after fold, and carrying weights across folds would leak one fold
+  into the next.
 
   All five integration points have tests that call the real library rather than asserting about it:
   `clone`, `Pipeline.fit`, `Pipeline.predict`, `GridSearchCV`, `cross_val_score`.
