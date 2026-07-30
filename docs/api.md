@@ -29,3 +29,17 @@
 ## Distance functions
 
 ::: python_som._core._distance
+
+## Options
+
+::: python_som._enums
+    options:
+      members:
+        - TrainingMode
+        - Neighborhood
+        - WeightInit
+        - SampleMode
+
+## Strategy protocols
+
+::: python_som._core._protocols

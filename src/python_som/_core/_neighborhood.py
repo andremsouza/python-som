@@ -23,16 +23,19 @@ https://doi.org/10.1007/BFb0027024
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Final
 
 import numpy as np
 import numpy.typing as npt
 
+from ._protocols import KernelFunction, NeighborhoodFunction
+
 __all__ = [
     "NEIGHBORHOOD_FUNCTIONS",
     "NEIGHBORHOOD_KERNELS",
     "SIGNED_NEIGHBORHOODS",
+    "KernelFunction",
+    "NeighborhoodFunction",
     "axis_offsets",
     "bubble",
     "bubble_kernel",
@@ -49,11 +52,6 @@ __all__ = [
 
 Grid = tuple[int, int]
 Coordinates = tuple[int, int]
-NeighborhoodFunction = Callable[
-    [Grid, Coordinates, float, tuple[bool, bool]], npt.NDArray[np.floating]
-]
-#: A neighborhood evaluated over every offset at once, independent of any particular winner.
-KernelFunction = Callable[[Grid, float, tuple[bool, bool]], npt.NDArray[np.floating]]
 
 
 def _validate_radius(sigma: float, *, allow_zero: bool = False) -> None:

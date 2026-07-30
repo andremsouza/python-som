@@ -35,12 +35,40 @@ from ._core._neighborhood import (
     gaussian,
     mexican_hat,
 )
+from ._core._protocols import (
+    DecayFunction,
+    DistanceFunction,
+    KernelFunction,
+    NeighborhoodFunction,
+)
+from ._enums import (
+    Neighborhood,
+    NeighborhoodStr,
+    SampleMode,
+    SampleModeStr,
+    TrainingMode,
+    TrainingModeStr,
+    WeightInit,
+    WeightInitStr,
+)
 from ._som import SOM
 
 __all__ = [
     "NEIGHBORHOOD_FUNCTIONS",
     "SIGNED_NEIGHBORHOODS",
     "SOM",
+    "DecayFunction",
+    "DistanceFunction",
+    "KernelFunction",
+    "Neighborhood",
+    "NeighborhoodFunction",
+    "NeighborhoodStr",
+    "SampleMode",
+    "SampleModeStr",
+    "TrainingMode",
+    "TrainingModeStr",
+    "WeightInit",
+    "WeightInitStr",
     "asymptotic_decay",
     "bubble",
     "euclidean_distance",

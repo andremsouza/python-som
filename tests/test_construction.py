@@ -64,7 +64,9 @@ def test_non_positive_input_len_raises() -> None:
 
 def test_unknown_neighborhood_function_raises_listing_the_options() -> None:
     with pytest.raises(ValueError, match="neighborhood_function") as excinfo:
-        python_som.SOM(x=5, y=5, input_len=3, neighborhood_function="sombrero")
+        # Deliberately invalid. The Literal annotation is what stops this reaching a caller in
+        # the first place; the runtime check is what catches it when it comes from a config file.
+        python_som.SOM(x=5, y=5, input_len=3, neighborhood_function="sombrero")  # type: ignore[arg-type]
     assert "gaussian" in str(excinfo.value)
 
 

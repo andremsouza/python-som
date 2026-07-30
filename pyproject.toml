@@ -199,4 +199,9 @@ exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
+    # A bare `...` is a Protocol method body: a declaration of shape that is never executed, since
+    # the protocols are structural and nothing inherits from them. Excluded as a rule rather than
+    # with four identical pragmas, and narrow enough to stay honest -- it matches only a line whose
+    # entire content is an ellipsis, which in this package occurs solely in _core/_protocols.py.
+    "^\\s*\\.\\.\\.$",
 ]

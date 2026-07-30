@@ -7,6 +7,58 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Enums for every string-valued option**: `TrainingMode`, `Neighborhood`, `WeightInit` and
+  `SampleMode`. Each member *is* a `str`, so `TrainingMode.BATCH` and `"batch"` are
+  interchangeable: equal, same hash, same JSON, usable as the same dictionary key. Nothing that
+  accepted a string stops accepting one.
+
+  The parameters are typed as the enum *or* the exact set of valid strings, so a type checker now
+  rejects `mode="bacth"` while accepting both `mode="batch"` and `mode=TrainingMode.BATCH`. If you
+  build an option from configuration, annotate it with the matching `TrainingModeStr` alias or call
+  `TrainingMode(value)` to validate it at runtime.
+
+  **Plain strings are deprecated but do not warn yet.** They warn in 0.5.0 and are removed in 1.0.0.
+  Warning now would fire on `mode="batch"`, which is what the documentation showed until this
+  release, so the written notice comes first. See `docs/options-and-types.md`.
+
+- **`Protocol`s for the three replaceable strategies**: `NeighborhoodFunction`, `DecayFunction` and
+  `DistanceFunction`, plus `KernelFunction` for the batch kernel. Structural, so nothing inherits
+  from them and every existing callable already satisfies its protocol; their parameters are
+  positional-only, so your own parameter names are your own. A type checker now checks a
+  user-supplied strategy against a named contract instead of a bare `Callable`.
+
+### Changed
+
+- **`learning_rate` is validated**, having been unchecked. A non-positive or non-finite rate raises
+  `ValueError`: `0` freezes every model so training completes and changes nothing, and `-1` moves
+  models away from the samples they match, taking the quantization error from 0.0 to 11.7. Both were
+  previously accepted in silence.
+
+  A rate above 1 emits `UserWarning` rather than raising. It overshoots and oscillates but does not
+  necessarily diverge: at `alpha = 5` with decay disabled the largest weight stayed at 3.61, because
+  the neighborhood damps the correction away from the winner. Kohonen gives no upper bound, so
+  rejecting it would invent a limit the sources do not.
+
+- The package is now a pure functional core with a thin shell around it. `python_som._core` holds
+  every numeric decision as functions over NumPy arrays and imports nothing but NumPy;
+  `python_som._convert` adapts pandas at the boundary; `python_som._som` keeps the state, the
+  validation and the training loops. **No public name, signature or numerical result changes** —
+  trained weights are bit-identical to 0.3.0 for every combination of training mode and neighborhood
+  function, which is asserted rather than assumed.
+
+  The boundary is machine-checked, not merely documented: ruff's `TID251` bans pandas and
+  scikit-learn outside the two shell modules that exist to adapt them, and reports the reason at the
+  point of violation. `architecture-profile.toml` records the style.
+
+- The two update rules are now pure functions returning new arrays. An earlier note claimed this
+  was also faster; **it is not**, and the claim is withdrawn. Measured with interleaved arms and
+  medians, the pure form is about 10% slower on small maps and indistinguishable above roughly
+  100x100. The cost buys functions testable without constructing a network, and is single-digit
+  milliseconds over a 10,000-iteration run on a 20x20 map. `benchmarks/bench_update.py` is the
+  corrected measurement.
+
 ### Performance
 
 - **Batch training is 1.2x to 1.5x faster**, with identical results. Eq. (8) needs the neighborhood
@@ -32,6 +84,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Stepwise training is unaffected: it already evaluates the neighborhood once per iteration, so
   there is nothing to amortize.
 
+### Fixed
+
+- **Linear initialization was inaccurate for data far from the origin.** Through 0.3.0 its PCA went
+  to scikit-learn's `auto` solver, which since 1.5 selects `covariance_eigh` when samples outnumber
+  features — it forms the covariance matrix, and squaring the data squares its condition number. On
+  `(150, 4)` data offset by 1e7, the second explained variance was wrong by **5.8%**, and the
+  resulting models differed from the correct ones by 2.43 against a total model spread of 2.0: an
+  error larger than the structure being initialized.
+
+  The NumPy implementation decomposes the centred matrix directly and agrees with a `longdouble`
+  reference to ~1e-15. Data offset far from the origin is not exotic — timestamps, easting/northing
+  coordinates and absolute sensor readings all look like it.
+
+  **This changes results.** For data near the origin the difference is floating-point noise (~1e-15,
+  and `auto_dimensions` is unaffected because it standardizes first). Far from the origin it is
+  large, and 0.4.0 is the correct one.
+
+- `_train_stepwise` looked up `array[index]` twice per iteration, allocating the sample twice on the
+  hot loop. Found by profiling the refactor rather than by reading it.
+
 ### Removed
 
 - **pandas and scikit-learn are no longer required.** `numpy` is the only runtime dependency.
@@ -51,50 +123,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   If you imported pandas or scikit-learn *transitively* through this package, add them to your own
   dependencies. That reliance was always an accident of packaging.
-
-### Fixed
-
-- **Linear initialization was inaccurate for data far from the origin.** Through 0.3.0 its PCA went
-  to scikit-learn's `auto` solver, which since 1.5 selects `covariance_eigh` when samples outnumber
-  features — it forms the covariance matrix, and squaring the data squares its condition number. On
-  `(150, 4)` data offset by 1e7, the second explained variance was wrong by **5.8%**, and the
-  resulting models differed from the correct ones by 2.43 against a total model spread of 2.0: an
-  error larger than the structure being initialized.
-
-  The NumPy implementation decomposes the centred matrix directly and agrees with a `longdouble`
-  reference to ~1e-15. Data offset far from the origin is not exotic — timestamps, easting/northing
-  coordinates and absolute sensor readings all look like it.
-
-  **This changes results.** For data near the origin the difference is floating-point noise (~1e-15,
-  and `auto_dimensions` is unaffected because it standardizes first). Far from the origin it is
-  large, and 0.4.0 is the correct one.
-
-### Changed
-
-- The package is now a pure functional core with a thin shell around it. `python_som._core` holds
-  every numeric decision as functions over NumPy arrays and imports nothing but NumPy;
-  `python_som._convert` adapts pandas at the boundary; `python_som._som` keeps the state, the
-  validation and the training loops. **No public name, signature or numerical result changes** —
-  trained weights are bit-identical to 0.3.0 for every combination of training mode and neighborhood
-  function, which is asserted rather than assumed.
-
-  The boundary is machine-checked, not merely documented: ruff's `TID251` bans pandas and
-  scikit-learn outside the two shell modules that exist to adapt them, and reports the reason at the
-  point of violation. `architecture-profile.toml` records the style.
-
-- The two update rules are now pure functions returning new arrays. An earlier note claimed this
-  was also faster; **it is not**, and the claim is withdrawn. Measured with interleaved arms and
-  medians, the pure form is about 10% slower on small maps and indistinguishable above roughly
-  100x100. The cost buys functions testable without constructing a network, and is single-digit
-  milliseconds over a 10,000-iteration run on a 20x20 map. `benchmarks/bench_update.py` is the
-  corrected measurement.
-
-### Fixed
-
-- `_train_stepwise` looked up `array[index]` twice per iteration, allocating the sample twice on the
-  hot loop. Found by profiling the refactor rather than by reading it.
-
-### Removed
 
 - The batch denominator's `1e-12` tolerance, replaced by `> 0`. The constant had no source, and it
   guarded a condition that cannot occur: every term of `sum_j n_j h_ji` is non-negative, because

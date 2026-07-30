@@ -11,12 +11,9 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Callable
-
     import numpy.typing as npt
 
-    #: Dissimilarity between an input vector and an array of models.
-    DistanceFunction = Callable[[Any, Any], npt.NDArray[np.floating]]
+    from ._protocols import DistanceFunction
 
 __all__ = ["accumulate", "activate", "quantization", "winner"]
 

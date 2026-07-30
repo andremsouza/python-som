@@ -13,7 +13,7 @@ from ._neighborhood import bubble
 if TYPE_CHECKING:  # pragma: no cover
     import numpy.typing as npt
 
-    from ._match import DistanceFunction
+    from ._protocols import DistanceFunction
 
 __all__ = ["activation_matrix", "label_map", "u_matrix", "winner_map"]
 

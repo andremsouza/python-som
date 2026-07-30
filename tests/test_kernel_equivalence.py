@@ -41,6 +41,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Callable
 
     from python_som._core._neighborhood import NeighborhoodFunction
+    from python_som._enums import NeighborhoodStr
 
 #: Grid shapes to sweep, including degenerate single-row and single-column maps, where the offset
 #: span collapses and an off-by-one in the slice would be invisible on a square grid.
@@ -244,7 +245,7 @@ def test_resolve_kernel_rejects_an_unknown_name() -> None:
 @pytest.mark.parametrize("neighborhood", ["gaussian", "bubble"])
 @pytest.mark.parametrize("cyclic", [(False, False), (True, True), (True, False)])
 def test_batch_training_is_unchanged_by_the_kernel(
-    neighborhood: str, cyclic: tuple[bool, bool]
+    neighborhood: NeighborhoodStr, cyclic: tuple[bool, bool]
 ) -> None:
     """Many iterations, with a decaying radius, against the per-node path it replaced.
 
