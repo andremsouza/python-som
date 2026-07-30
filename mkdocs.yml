@@ -29,16 +29,35 @@ theme:
 
 nav:
   - Home: index.md
-  - Getting started: getting-started.md
-  - Neighborhood functions: neighborhood-functions.md
-  - Training modes: training-modes.md
-  - Options and types: options-and-types.md
-  - Saving and loading: save-and-load.md
-  - API reference: api.md
-  - Changelog: changelog.md
+  - Tutorial:
+      - Your first map: tutorial/first-map.md
+  - How-to:
+      - Save and load a map: how-to/save-and-load-a-map.md
+      - Reproduce a result: how-to/reproduce-a-result.md
+      - Use a custom strategy: how-to/use-a-custom-strategy.md
+  - Reference:
+      - Options and types: reference/options.md
+      - Neighborhood functions: reference/neighborhood-functions.md
+      - API: reference/api.md
+      - Changelog: reference/changelog.md
+  - Explanation:
+      - Why isotropy matters: explanation/why-isotropy-matters.md
+      - Batch vs stepwise: explanation/batch-vs-stepwise.md
+      - Artifact safety: explanation/artifact-safety.md
 
 plugins:
   - search
+  # Every page moved when the docs were reorganised, and two of the old URLs are frozen in 0.3.0's
+  # PyPI description, which can never be edited. These keep them working.
+  - redirects:
+      redirect_maps:
+        getting-started.md: tutorial/first-map.md
+        neighborhood-functions.md: reference/neighborhood-functions.md
+        training-modes.md: explanation/batch-vs-stepwise.md
+        options-and-types.md: reference/options.md
+        save-and-load.md: how-to/save-and-load-a-map.md
+        api.md: reference/api.md
+        changelog.md: reference/changelog.md
   - mkdocstrings:
       handlers:
         python:

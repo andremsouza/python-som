@@ -5,8 +5,8 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/python-som.svg)](https://pypi.org/project/python-som/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/andremsouza/python-som/blob/master/LICENSE)
 
-Implementation of Kohonen's 2-D self-organizing map, built on NumPy, with scikit-learn for PCA and
-standardization. Accepts NumPy arrays, pandas DataFrames and plain lists.
+Implementation of Kohonen's 2-D self-organizing map. NumPy is the only dependency. Accepts NumPy
+arrays, pandas DataFrames, polars, pyarrow, and anything else implementing the `__array__` protocol.
 
 [Documentation](https://andremsouza.github.io/python-som/) ·
 [Changelog](https://github.com/andremsouza/python-som/blob/master/CHANGELOG.md)
@@ -36,7 +36,7 @@ winner = som.winner(data[0])
 ```
 
 A full worked example with plots is in [examples/iris.py](https://github.com/andremsouza/python-som/blob/master/examples/iris.py) and in the
-[getting-started guide](https://andremsouza.github.io/python-som/getting-started/).
+[getting-started guide](https://andremsouza.github.io/python-som/tutorial/first-map/).
 
 ![U-matrix of a SOM trained on Iris](https://raw.githubusercontent.com/andremsouza/python-som/master/docs/assets/iris.png)
 
@@ -68,7 +68,7 @@ update of Kohonen Eq. (8) is a weighted mean whose denominator is not sign-defin
 neighborhood function. Use `mode='random'` or `mode='sequential'`; `mode='batch'` raises a
 `ValueError`.
 
-See [Neighborhood functions](https://andremsouza.github.io/python-som/neighborhood-functions/) for
+See [Neighborhood functions](https://andremsouza.github.io/python-som/reference/neighborhood-functions/) for
 the derivations, including why the Mexican hat is not an outer product of two 1-D wavelets.
 
 ## Upgrading

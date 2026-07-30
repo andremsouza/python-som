@@ -14,7 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and
   the last training report. No pickle on either side, so loading one cannot execute code.
 
-  A reloaded map **continues the same random stream**, so training it further gives what never
+  A reloaded map continues the same random stream, so training it further gives what never
   stopping would have given. Both the seed and the generator's current state are saved: the seed
   alone
   would restart the stream and a resumed run would quietly diverge from an uninterrupted one.
@@ -31,13 +31,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and
   the member list, JSON, format version and weight shape are all validated before a map is built.
   What
-  that buys is "cannot execute code", not "safe to load anything" — an `.npz` is a zip, so a hostile
+  that buys is "cannot execute code", not "safe to load anything". An `.npz` is a zip, so a hostile
   file can still attempt resource exhaustion. `docs/save-and-load.md` states both halves.
 
 - **`SOM.last_report`**, a frozen `TrainingReport`: mode, iterations, sample count, seed, the final
   learning rate and radius, quantization error, the `python_som` and NumPy versions, and wall time.
   `train()` still returns the quantization error, so nothing that used the return value changes.
-  `final_learning_rate` is `None` for batch training, which has no step size — Eq. (8) is a weighted
+  `final_learning_rate` is `None` for batch training, which has no step size: Eq. (8) is a weighted
   mean, and reporting the unused initial value would read as though it had been applied.
 
 - **`SOMConfig`**, the serialisable description of a map, available as `som.config()`.
@@ -85,7 +85,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The package is now a pure functional core with a thin shell around it. `python_som._core` holds
   every numeric decision as functions over NumPy arrays and imports nothing but NumPy;
   `python_som._convert` adapts pandas at the boundary; `python_som._som` keeps the state, the
-  validation and the training loops. **No public name, signature or numerical result changes** —
+  validation and the training loops. No public name, signature or numerical result changes:
   trained weights are bit-identical to 0.3.0 for every combination of training mode and neighborhood
   function, which is asserted rather than assumed.
 
@@ -94,7 +94,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   point of violation. `architecture-profile.toml` records the style.
 
 - The two update rules are now pure functions returning new arrays. An earlier note claimed this
-  was also faster; **it is not**, and the claim is withdrawn. Measured with interleaved arms and
+  was also faster. It is not, and the claim is withdrawn. Measured with interleaved arms and
   medians, the pure form is about 10% slower on small maps and indistinguishable above roughly
   100x100. The cost buys functions testable without constructing a network, and is single-digit
   milliseconds over a 10,000-iteration run on a 20x20 map. `benchmarks/bench_update.py` is the
@@ -104,19 +104,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Batch training is 1.2x to 1.5x faster**, with identical results. Eq. (8) needs the neighborhood
   between every pair of nodes, and the previous implementation got it by evaluating the neighborhood
-  function once per node, once per iteration — 1600 full-grid evaluations per iteration on a 40x40
-  map. Profiling made that **42% of batch training**, more than the contraction it feeds.
+  function once per node, once per iteration, which is 1600 full-grid evaluations per iteration on a 40x40
+  map. Profiling made that 42% of batch training, more than the contraction it feeds.
 
   It is unnecessary, because a neighborhood depends only on the offset between two nodes and never
   on where the winner sits. One kernel over every reachable offset serves the whole grid, and
-  each node's neighborhood is a slice of it — a view, not a copy. The kernel costs `4xy` floats,
+  each node's neighborhood is a slice of it, as a view rather than a copy. The kernel costs `4xy` floats,
   111 KB on a 60x60 map, against the 800 MB a full `(x, y, x, y)` tensor would need.
 
   The offset-only dependence holds on a torus as well as a flat grid, because making the fold depend
   on the offset alone is exactly what the minimum-image convention does. It holds per axis, so mixed
   maps (one axis wrapping, one not) need no special case.
 
-  **Results do not change.** Trained weights are bit-identical for all 72 working combinations of
+  Results do not change: trained weights are bit-identical for all 72 working combinations of
   training mode, neighborhood function, initializer and cyclic setting, and the kernel is checked
   against per-node evaluation across 40,832 combinations at exactly `0.0`. The gaussian gains more
   than the bubble, whose per-node form is cheaper to begin with. `benchmarks/bench_batch.py` is the
@@ -129,16 +129,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Linear initialization was inaccurate for data far from the origin.** Through 0.3.0 its PCA went
   to scikit-learn's `auto` solver, which since 1.5 selects `covariance_eigh` when samples outnumber
-  features — it forms the covariance matrix, and squaring the data squares its condition number. On
-  `(150, 4)` data offset by 1e7, the second explained variance was wrong by **5.8%**, and the
+  features. It forms the covariance matrix, and squaring the data squares its condition number. On
+  `(150, 4)` data offset by 1e7, the second explained variance was wrong by 5.8%, and the
   resulting models differed from the correct ones by 2.43 against a total model spread of 2.0: an
   error larger than the structure being initialized.
 
   The NumPy implementation decomposes the centred matrix directly and agrees with a `longdouble`
-  reference to ~1e-15. Data offset far from the origin is not exotic — timestamps, easting/northing
+  reference to ~1e-15. Data offset far from the origin is not exotic: timestamps, easting/northing
   coordinates and absolute sensor readings all look like it.
 
-  **This changes results.** For data near the origin the difference is floating-point noise (~1e-15,
+  This changes results. For data near the origin the difference is floating-point noise (~1e-15,
   and `auto_dimensions` is unaffected because it standardizes first). Far from the origin it is
   large, and 0.4.0 is the correct one.
 
@@ -148,11 +148,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Removed
 
 - **pandas and scikit-learn are no longer required.** `numpy` is the only runtime dependency.
-  Measured on Linux/CPython 3.12, a fresh install drops from **333 MB across 10 packages to 69 MB
-  across 1** — a 264 MB reduction, 79% of the payload, since the two also pulled in scipy, joblib,
+  Measured on Linux/CPython 3.12, a fresh install drops from 333 MB across 10 packages to 69 MB
+  across 1, a 264 MB reduction and 79% of the payload, since the two also pulled in scipy, joblib,
   narwhals, python-dateutil, six and threadpoolctl.
 
-  Nothing is lost, and input support is *wider*. pandas was used for one `isinstance` check before
+  Nothing is lost, and input support is wider. pandas was used for one `isinstance` check before
   calling `.to_numpy()`; `np.asarray` already does that via the `__array__` protocol. Because
   that is a protocol rather than a library, polars, pyarrow, xarray and CuPy objects now work too,
   without this package knowing they exist.

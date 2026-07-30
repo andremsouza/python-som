@@ -76,7 +76,7 @@ stepwise modes. Kohonen Section 4.1 on the radius schedule:
 
 So a sensible starting point is `neighborhood_radius` at roughly half the shorter side of the grid,
 decaying from there, with the floor described in
-[Neighborhood functions](neighborhood-functions.md#the-radius-floor) keeping it away from zero.
+[Neighborhood functions](../reference/neighborhood-functions.md#the-radius-floor) keeping it away from zero.
 
 ## Reproducibility
 

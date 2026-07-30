@@ -73,7 +73,7 @@ error = som.train(features, n_iteration=len(features), mode="batch", verbose=Tru
 print(f"quantization error: {error:.4f}")
 ```
 
-See [Training modes](training-modes.md) for how the three modes differ and why batch is
+See [Batch vs stepwise](../explanation/batch-vs-stepwise.md) for how the modes differ and why batch is
 recommended.
 
 ### Inspect the result
@@ -109,7 +109,7 @@ plt.axis((0, som.get_shape()[0], 0, som.get_shape()[1]))
 plt.savefig("iris.png")
 ```
 
-![U-matrix of a SOM trained on Iris](assets/iris.png)
+![U-matrix of a SOM trained on Iris](../assets/iris.png)
 
 Darker regions of the U-matrix mean neighbouring models are far apart, so they read as boundaries
 between clusters.
@@ -135,4 +135,4 @@ print(som.get_random_seed())
 
 Same seed, same map. The generator belongs to the instance, so building a SOM will not disturb
 NumPy's global random state. Note that seeds do not reproduce across the 0.3.0 boundary; see the
-warning in [Training modes](training-modes.md#reproducibility).
+warning in [Batch vs stepwise](../explanation/batch-vs-stepwise.md#reproducibility).

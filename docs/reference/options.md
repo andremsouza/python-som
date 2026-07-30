@@ -26,7 +26,7 @@ before stops accepting one.
 ## Why bother
 
 A type checker cannot tell `"batch"` from `"bacth"`, so the misspelling survives until the
-`ValueError` at runtime — after however long it took to get there. The parameters are typed as the
+`ValueError` at runtime, after however long it took to get there. The parameters are typed as the
 enum *or* the exact set of valid strings, so both spellings pass and a typo does not:
 
 ```python
@@ -73,38 +73,11 @@ Strings are deprecated as of **0.4.0**, and nothing warns yet.
 No warning in 0.4.0 is deliberate. `mode="batch"` is what this documentation showed until this page
 existed, so a minor release that warned on it would be scolding people for following its own
 instructions. The written notice comes first and the warning follows in 0.5.0, which also means
-0.5.0 has to ship before 1.0.0 can remove anything — the policy is that a removal in a major release
+0.5.0 has to ship before 1.0.0 can remove anything: the policy is that a removal in a major release
 is preceded by at least one minor release that warns.
 
 Migrating early costs nothing and is a mechanical substitution: `"batch"` becomes
 `TrainingMode.BATCH`, and so on down the table above.
-
-## Custom strategies
-
-Three things can be replaced with your own implementation: the neighborhood, the decay applied to
-the learning rate and radius, and the distance. Each has a `Protocol` describing what it must accept
-and return, so a type checker verifies yours against a named contract rather than a bare `Callable`.
-
-```python
-from python_som import DecayFunction
-
-
-def linear_to_zero(value: float, step: int, total: int) -> float:
-    return value * (1.0 - step / total)
-
-
-som = python_som.SOM(x=10, y=10, input_len=4, learning_rate_decay=linear_to_zero)
-```
-
-The protocols are **structural**: nothing needs to inherit from them, and every callable that
-already worked still does. Their parameters are positional-only, so your parameter names are your
-own — `linear_to_zero(value, step, total)` and `linear_to_zero(a, b, c)` both satisfy
-`DecayFunction`.
-
-One contract is worth reading before writing a neighborhood of your own:
-[`NeighborhoodFunction`][python_som.NeighborhoodFunction] must be a function of the grid distance
-between two nodes, not of the two axis offsets separately. See
-[Neighborhood functions](neighborhood-functions.md) for what goes wrong otherwise.
 
 ## Learning rate
 
@@ -114,7 +87,7 @@ between two nodes, not of the two axis offsets separately. See
   completes and changes nothing; `-1` moves models *away* from the samples they match, taking the
   quantization error from 0.0 to 11.7 in one run. Both used to be accepted in silence.
 - **Warned about**: anything above 1. Eq. (3) moves a model a fraction `alpha * h` of the way to the
-  sample, so above 1 it overshoots and oscillates. It does not necessarily diverge — at `alpha = 5`
+  sample, so above 1 it overshoots and oscillates. It does not necessarily diverge: at `alpha = 5`
   with decay disabled the largest weight stayed at 3.61, because the neighborhood damps the
-  correction away from the winner — and Kohonen gives no upper bound, so it is a warning rather than
+  correction away from the winner. Kohonen gives no upper bound, so it is a warning rather than
   an error.

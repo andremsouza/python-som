@@ -66,6 +66,16 @@ dev = [
 ]
 docs = [
     "mkdocs-material==9.7.7",
+    # Pinned to 1.2.2 deliberately, not to the latest 1.2.3. The canonical repository,
+    # github.com/mkdocs/mkdocs-redirects (245 stars, active, not archived), has tags up to v1.2.2 and
+    # no v1.2.3. PyPI's 1.2.3 was published on 2026-03-28 declaring its source as
+    # github.com/ProperDocs/properdocs-redirects, a repository created 2026-03-14 with 3 stars -- a
+    # version upstream never tagged, released from a repository that appeared two weeks earlier while
+    # the original stayed active. 1.2.2's declared source is the canonical repository and matches its
+    # own v1.2.2 tag, so that is the last release whose provenance can be checked.
+    #
+    # Do not bump this without re-checking who publishes it.
+    "mkdocs-redirects==1.2.2",
     "mkdocstrings-python==2.0.5",
 ]
 # Static analysis used during review, kept out of `dev` so the CI jobs that never run it do not
