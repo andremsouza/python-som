@@ -14,8 +14,10 @@ arrays, pandas DataFrames, polars, pyarrow, and anything else implementing the `
 ## Install
 
 ```bash
-pip install python-som              # requires Python 3.10+
-pip install "python-som[cli]"       # adds tqdm progress bars
+pip install python-som                  # requires Python 3.10+; NumPy is the only dependency
+pip install "python-som[cli]"           # adds tqdm progress bars
+pip install "python-som[sklearn]"       # adds the scikit-learn estimator adapter
+pip install "python-som[examples]"      # adds matplotlib and seaborn, for the plots
 ```
 
 ## Quick start
@@ -35,6 +37,17 @@ umatrix = som.distance_matrix()
 winner = som.winner(data[0])
 ```
 
+The same map through the estimator interface, which `Pipeline` and `GridSearchCV` also understand:
+
+```python
+som.fit(data, n_iteration=len(data), mode="batch")
+labels = som.predict(data)  # (n_samples,) flat node index
+distances = som.transform(data)  # (n_samples, x*y)
+
+som.save_npz("map.npz")  # models plus provenance, no pickle
+som = python_som.SOM.load_npz("map.npz")
+```
+
 A full worked example with plots is in [examples/iris.py](https://github.com/andremsouza/python-som/blob/master/examples/iris.py) and in the
 [getting-started guide](https://andremsouza.github.io/python-som/tutorial/first-map/).
 
@@ -42,12 +55,18 @@ A full worked example with plots is in [examples/iris.py](https://github.com/and
 
 ## Features
 
+* NumPy is the only runtime dependency; a fresh install is 69 MB across one package
 * Stepwise and batch training
 * Random, random-sampling and linear (PCA) weight initialization
 * Automatic selection of the map size ratio, from PCA
 * Cyclic arrays, for toroidal maps
 * Gaussian, bubble and Mexican hat neighborhood functions
 * Custom decay functions
+* Save and load a trained map without `pickle`, so loading one cannot execute code
+* Provenance: every run records its seed, iteration count, error and library versions
+* Works as a scikit-learn estimator: `fit`, `transform`, `predict`, and an adapter for `Pipeline`,
+  `GridSearchCV` and `cross_val_score`
+* Options accepted as plain strings or enums, with typos caught by a type checker
 * Visualization support: U-matrix, activation matrix
 * Supervised labelling, via the label map
 * Fully type-annotated, with a `py.typed` marker
@@ -73,10 +92,27 @@ the derivations, including why the Mexican hat is not an outer product of two 1-
 
 ## Upgrading
 
-0.3.0 corrects several methodology defects, so numerical results are not comparable with earlier
-versions. In particular **`random_seed` no longer reproduces pre-0.3.0 maps**: the generator is now
-per-instance rather than a call to `np.random.seed` on NumPy's global state. To reproduce figures
-made with an older version, pin `python-som==0.2.0`.
+Two releases change numerical results. If you are reproducing a figure, pin the version that made
+it.
+
+**0.3.0** corrects several methodology defects, so results are not comparable with earlier versions.
+In particular **`random_seed` no longer reproduces pre-0.3.0 maps**: the generator is now
+per-instance rather than a call to `np.random.seed` on NumPy's global state. To reproduce older
+figures, pin `python-som==0.2.0`.
+
+**0.4.0** corrects linear initialization for data far from the origin. Its PCA previously went
+through scikit-learn's `auto` solver, which forms a covariance matrix and loses precision when the
+mean is large relative to the spread. On data offset by 1e7 the second explained variance was wrong
+by 5.8%.
+Near the origin the difference is floating-point noise. Timestamps, coordinates and absolute sensor
+readings are the cases that were affected.
+
+0.4.0 also **removed pandas and scikit-learn as runtime dependencies**. If you imported either
+transitively through this package, depend on them directly, or install `python-som[examples]`.
+
+**0.5.0** briefly made plain-string options emit a `DeprecationWarning`. **0.6.0 withdrew that**:
+strings are permanent and 1.0.0 will not remove them. If you saw that warning, you can stop
+migrating.
 
 Each change and the passage of Kohonen (2013) behind it is in the
 [changelog](https://github.com/andremsouza/python-som/blob/master/CHANGELOG.md).
@@ -89,6 +125,8 @@ uv run pytest --cov          # tests and coverage
 uv run ruff check .          # lint
 uv run ruff format --check . # formatting
 uv run mypy                  # type-check
+uv run bandit -c pyproject.toml -r src/   # security checks
+uv run pip-audit             # known vulnerabilities in the resolved set
 uv run mkdocs serve          # docs, locally
 pre-commit install           # optional, run the gates on commit
 ```
