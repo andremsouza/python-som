@@ -31,12 +31,19 @@ import numpy.typing as npt
 
 __all__ = [
     "NEIGHBORHOOD_FUNCTIONS",
+    "NEIGHBORHOOD_KERNELS",
     "SIGNED_NEIGHBORHOODS",
     "axis_offsets",
     "bubble",
+    "bubble_kernel",
     "gaussian",
+    "gaussian_kernel",
+    "kernel_view",
     "mexican_hat",
+    "mexican_hat_kernel",
+    "offset_span",
     "resolve",
+    "resolve_kernel",
     "squared_grid_distance",
 ]
 
@@ -45,6 +52,8 @@ Coordinates = tuple[int, int]
 NeighborhoodFunction = Callable[
     [Grid, Coordinates, float, tuple[bool, bool]], npt.NDArray[np.floating]
 ]
+#: A neighborhood evaluated over every offset at once, independent of any particular winner.
+KernelFunction = Callable[[Grid, float, tuple[bool, bool]], npt.NDArray[np.floating]]
 
 
 def _validate_radius(sigma: float, *, allow_zero: bool = False) -> None:
@@ -81,6 +90,28 @@ def axis_offsets(length: int, center: int, *, cyclic: bool) -> npt.NDArray[np.fl
     return d
 
 
+def offset_span(length: int, *, cyclic: bool) -> npt.NDArray[np.floating]:
+    """Every offset any pair of nodes on this axis can have: ``-(length-1) .. (length-1)``.
+
+    The full-range counterpart of :func:`axis_offsets`, which gives the offsets from one particular
+    centre. Because a neighborhood depends on the offset alone and never on where the winner sits,
+    one array over this span serves every node -- which is what lets batch training evaluate the
+    neighborhood once per iteration instead of once per node.
+
+    The cyclic fold is the same minimum-image convention, applied with the real period ``length``
+    rather than the span's own width. That is the whole reason this cannot be expressed as
+    ``axis_offsets`` on a ``2*length-1`` axis: the fold would then use the wrong period.
+
+    :param length: Number of nodes along the axis.
+    :param cyclic: Whether the axis wraps around.
+    :return: Signed offsets, ``2 * length - 1`` of them, centred on zero.
+    """
+    d = np.arange(-(length - 1), length, dtype=float)
+    if cyclic:
+        d = (d + length / 2) % length - length / 2
+    return d
+
+
 def squared_grid_distance(
     shape: Grid, c: Coordinates, cyclic: tuple[bool, bool]
 ) -> npt.NDArray[np.floating]:
@@ -94,6 +125,72 @@ def squared_grid_distance(
     dx = axis_offsets(shape[0], c[0], cyclic=cyclic[0])
     dy = axis_offsets(shape[1], c[1], cyclic=cyclic[1])
     return np.add.outer(np.square(dx), np.square(dy))
+
+
+# ---------------------------------------------------------------------------------------------
+# The profiles: one implementation of each formula, shared by the per-node and kernel forms.
+#
+# Each takes the two axes' offsets rather than a grid and a centre, because that is the only thing
+# the two forms differ in: the per-node function passes `axis_offsets` from one winner, and the
+# kernel builder passes `offset_span` covering every winner at once. Keeping one copy of the formula
+# is what makes the two bit-identical by construction rather than by agreement, which matters here:
+# the defect that started this whole investigation was a plausible-looking second version of the
+# mexican hat that disagreed with the first.
+#
+# Validation lives here, so neither form can skip it.
+# ---------------------------------------------------------------------------------------------
+
+
+def _gaussian_profile(
+    dx: npt.NDArray[np.floating], dy: npt.NDArray[np.floating], sigma: float
+) -> npt.NDArray[np.floating]:
+    """Evaluate ``exp(-sqdist / (2 sigma^2))`` over an outer product of axis offsets.
+
+    :param dx: Offsets along the first axis.
+    :param dy: Offsets along the second axis.
+    :param sigma: Neighborhood radius.
+    :return: Neighborhood weights over the two axes.
+    :raises ValueError: If the radius is not a finite positive number.
+    """
+    _validate_radius(sigma)
+    return np.exp(-np.add.outer(np.square(dx), np.square(dy)) / (2.0 * sigma * sigma))
+
+
+def _mexican_hat_profile(
+    dx: npt.NDArray[np.floating], dy: npt.NDArray[np.floating], sigma: float
+) -> npt.NDArray[np.floating]:
+    """Evaluate ``(1 - u) exp(-u)`` over ``u = sqdist / (2 sigma^2)``.
+
+    :param dx: Offsets along the first axis.
+    :param dy: Offsets along the second axis.
+    :param sigma: Neighborhood radius.
+    :return: Neighborhood weights over the two axes.
+    :raises ValueError: If the radius is not a finite positive number.
+    """
+    _validate_radius(sigma)
+    u = np.add.outer(np.square(dx), np.square(dy)) / (2.0 * sigma * sigma)
+    return (1.0 - u) * np.exp(-u)
+
+
+def _bubble_profile(
+    dx: npt.NDArray[np.floating], dy: npt.NDArray[np.floating], sigma: float
+) -> npt.NDArray[np.floating]:
+    """Evaluate the Chebyshev indicator ``max(|dx|, |dy|) <= round(sigma)``.
+
+    Deliberately not built on ``sqdist``, unlike the other two: the bubble's metric is Chebyshev, so
+    it is a product of two per-axis indicators rather than a function of a Euclidean distance. That
+    asymmetry is the implementation following Vrieze's appendix, and is preserved rather than
+    quietly unified. See :func:`bubble`.
+
+    :param dx: Offsets along the first axis.
+    :param dy: Offsets along the second axis.
+    :param sigma: Neighborhood radius, rounded to the nearest integer.
+    :return: Neighborhood weights over the two axes.
+    :raises ValueError: If the radius is not a finite non-negative number.
+    """
+    _validate_radius(sigma, allow_zero=True)
+    radius = int(np.around(sigma))
+    return np.multiply.outer(np.abs(dx) <= radius, np.abs(dy) <= radius).astype(float)
 
 
 def gaussian(
@@ -111,8 +208,11 @@ def gaussian(
     :return: Neighborhood weights, with the shape of the network.
     :raises ValueError: If the radius is not a finite positive number.
     """
-    _validate_radius(sigma)
-    return np.exp(-squared_grid_distance(shape, c, cyclic) / (2.0 * sigma * sigma))
+    return _gaussian_profile(
+        axis_offsets(shape[0], c[0], cyclic=cyclic[0]),
+        axis_offsets(shape[1], c[1], cyclic=cyclic[1]),
+        sigma,
+    )
 
 
 def mexican_hat(
@@ -141,9 +241,11 @@ def mexican_hat(
     :return: Neighborhood weights, with the shape of the network.
     :raises ValueError: If the radius is not a finite positive number.
     """
-    _validate_radius(sigma)
-    u = squared_grid_distance(shape, c, cyclic) / (2.0 * sigma * sigma)
-    return (1.0 - u) * np.exp(-u)
+    return _mexican_hat_profile(
+        axis_offsets(shape[0], c[0], cyclic=cyclic[0]),
+        axis_offsets(shape[1], c[1], cyclic=cyclic[1]),
+        sigma,
+    )
 
 
 def bubble(
@@ -181,11 +283,11 @@ def bubble(
     :return: Neighborhood weights, with the shape of the network.
     :raises ValueError: If the radius is not a finite non-negative number.
     """
-    _validate_radius(sigma, allow_zero=True)
-    radius = int(np.around(sigma))
-    dx = np.abs(axis_offsets(shape[0], c[0], cyclic=cyclic[0]))
-    dy = np.abs(axis_offsets(shape[1], c[1], cyclic=cyclic[1]))
-    return np.multiply.outer(dx <= radius, dy <= radius).astype(float)
+    return _bubble_profile(
+        axis_offsets(shape[0], c[0], cyclic=cyclic[0]),
+        axis_offsets(shape[1], c[1], cyclic=cyclic[1]),
+        sigma,
+    )
 
 
 NEIGHBORHOOD_FUNCTIONS: Final[dict[str, NeighborhoodFunction]] = {
@@ -211,6 +313,111 @@ def resolve(name: str) -> NeighborhoodFunction:
         return NEIGHBORHOOD_FUNCTIONS[name]
     except KeyError as exc:
         valid = sorted(NEIGHBORHOOD_FUNCTIONS)
+        msg = (
+            f"Invalid value for 'neighborhood_function' parameter: {name!r}. "
+            f"Value should be one of {valid}"
+        )
+        raise ValueError(msg) from exc
+
+
+# ---------------------------------------------------------------------------------------------
+# Kernels: one evaluation per iteration instead of one per node.
+# ---------------------------------------------------------------------------------------------
+
+
+def gaussian_kernel(
+    shape: Grid, sigma: float, cyclic: tuple[bool, bool]
+) -> npt.NDArray[np.floating]:
+    """Evaluate the gaussian over every offset, to be sliced per node by :func:`kernel_view`.
+
+    :param shape: Shape of the network.
+    :param sigma: Neighborhood radius.
+    :param cyclic: Whether each axis wraps around.
+    :return: Weights of shape ``(2 * shape[0] - 1, 2 * shape[1] - 1)``.
+    :raises ValueError: If the radius is not a finite positive number.
+    """
+    return _gaussian_profile(
+        offset_span(shape[0], cyclic=cyclic[0]), offset_span(shape[1], cyclic=cyclic[1]), sigma
+    )
+
+
+def mexican_hat_kernel(
+    shape: Grid, sigma: float, cyclic: tuple[bool, bool]
+) -> npt.NDArray[np.floating]:
+    """Evaluate the mexican hat over every offset. See :func:`gaussian_kernel`.
+
+    :param shape: Shape of the network.
+    :param sigma: Neighborhood radius.
+    :param cyclic: Whether each axis wraps around.
+    :return: Weights of shape ``(2 * shape[0] - 1, 2 * shape[1] - 1)``.
+    :raises ValueError: If the radius is not a finite positive number.
+    """
+    return _mexican_hat_profile(
+        offset_span(shape[0], cyclic=cyclic[0]), offset_span(shape[1], cyclic=cyclic[1]), sigma
+    )
+
+
+def bubble_kernel(shape: Grid, sigma: float, cyclic: tuple[bool, bool]) -> npt.NDArray[np.floating]:
+    """Evaluate the bubble over every offset. See :func:`gaussian_kernel`.
+
+    :param shape: Shape of the network.
+    :param sigma: Neighborhood radius.
+    :param cyclic: Whether each axis wraps around.
+    :return: Weights of shape ``(2 * shape[0] - 1, 2 * shape[1] - 1)``.
+    :raises ValueError: If the radius is not a finite non-negative number.
+    """
+    return _bubble_profile(
+        offset_span(shape[0], cyclic=cyclic[0]), offset_span(shape[1], cyclic=cyclic[1]), sigma
+    )
+
+
+NEIGHBORHOOD_KERNELS: Final[dict[str, KernelFunction]] = {
+    "gaussian": gaussian_kernel,
+    "bubble": bubble_kernel,
+    "mexicanhat": mexican_hat_kernel,
+    "mexican_hat": mexican_hat_kernel,
+}
+"""Kernel form of each neighborhood function, keyed exactly as :data:`NEIGHBORHOOD_FUNCTIONS`.
+
+Every registered name has one, which is what lets batch training use the kernel path unconditionally
+instead of carrying a fallback branch for a case that cannot arise.
+"""
+
+
+def kernel_view(
+    kernel: npt.NDArray[np.floating], shape: Grid, c: Coordinates
+) -> npt.NDArray[np.floating]:
+    """Extract node ``c``'s neighborhood from a kernel, as a view rather than a copy.
+
+    The kernel is indexed by offset, with offset zero at ``(shape[0] - 1, shape[1] - 1)``. Node
+    ``c`` sees offsets ``i - c`` for each node ``i``, so its neighborhood is the ``shape``-sized
+    block starting at ``(shape[0] - 1 - c[0], shape[1] - 1 - c[1])``.
+
+    Returning a view is the point: copying ``shape[0] * shape[1]`` floats per node would give back
+    much of what evaluating the kernel once saved. Downstream reads it only, and ``np.sum`` and
+    ``np.einsum`` are both happy with a non-contiguous view.
+
+    :param kernel: Kernel from one of the ``*_kernel`` functions.
+    :param shape: Shape of the network.
+    :param c: Coordinates of the node whose neighborhood is wanted.
+    :return: A read-only-by-convention view of shape ``shape``.
+    """
+    return kernel[
+        shape[0] - 1 - c[0] : 2 * shape[0] - 1 - c[0], shape[1] - 1 - c[1] : 2 * shape[1] - 1 - c[1]
+    ]
+
+
+def resolve_kernel(name: str) -> KernelFunction:
+    """Look up the kernel form of a neighborhood function by name.
+
+    :param name: Name of the neighborhood function.
+    :return: The corresponding kernel builder.
+    :raises ValueError: If the name is not recognised.
+    """
+    try:
+        return NEIGHBORHOOD_KERNELS[name]
+    except KeyError as exc:
+        valid = sorted(NEIGHBORHOOD_KERNELS)
         msg = (
             f"Invalid value for 'neighborhood_function' parameter: {name!r}. "
             f"Value should be one of {valid}"

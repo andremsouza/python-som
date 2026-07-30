@@ -7,6 +7,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Performance
+
+- **Batch training is 1.2x to 1.5x faster**, with identical results. Eq. (8) needs the neighborhood
+  between every pair of nodes, and the previous implementation got it by evaluating the neighborhood
+  function once per node, once per iteration — 1600 full-grid evaluations per iteration on a 40x40
+  map. Profiling made that **42% of batch training**, more than the contraction it feeds.
+
+  It is unnecessary, because a neighborhood depends only on the offset between two nodes and never
+  on where the winner sits. One kernel over every reachable offset serves the whole grid, and
+  each node's neighborhood is a slice of it — a view, not a copy. The kernel costs `4xy` floats,
+  111 KB on a 60x60 map, against the 800 MB a full `(x, y, x, y)` tensor would need.
+
+  The offset-only dependence holds on a torus as well as a flat grid, because making the fold depend
+  on the offset alone is exactly what the minimum-image convention does. It holds per axis, so mixed
+  maps (one axis wrapping, one not) need no special case.
+
+  **Results do not change.** Trained weights are bit-identical for all 72 working combinations of
+  training mode, neighborhood function, initializer and cyclic setting, and the kernel is checked
+  against per-node evaluation across 40,832 combinations at exactly `0.0`. The gaussian gains more
+  than the bubble, whose per-node form is cheaper to begin with. `benchmarks/bench_batch.py` is the
+  measurement.
+
+  Stepwise training is unaffected: it already evaluates the neighborhood once per iteration, so
+  there is nothing to amortize.
+
 ### Removed
 
 - **pandas and scikit-learn are no longer required.** `numpy` is the only runtime dependency.
@@ -54,17 +79,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   function, which is asserted rather than assumed.
 
   The boundary is machine-checked, not merely documented: ruff's `TID251` bans pandas and
-  scikit-learn
-  outside the two shell modules that exist to adapt them, and reports the reason at the point of
-  violation. `architecture-profile.toml` records the style.
+  scikit-learn outside the two shell modules that exist to adapt them, and reports the reason at the
+  point of violation. `architecture-profile.toml` records the style.
 
-- The two update rules are now pure functions returning new arrays. An earlier note claimed this was
-  also faster; **it is not**, and the claim is withdrawn. Measured with interleaved arms and
-  medians,
-  the pure form is about 10% slower on small maps and indistinguishable above roughly 100x100. The
-  cost buys functions testable without constructing a network, and is single-digit milliseconds over
-  a
-  10,000-iteration run on a 20x20 map. `benchmarks/bench_update.py` is the corrected measurement.
+- The two update rules are now pure functions returning new arrays. An earlier note claimed this
+  was also faster; **it is not**, and the claim is withdrawn. Measured with interleaved arms and
+  medians, the pure form is about 10% slower on small maps and indistinguishable above roughly
+  100x100. The cost buys functions testable without constructing a network, and is single-digit
+  milliseconds over a 10,000-iteration run on a 20x20 map. `benchmarks/bench_update.py` is the
+  corrected measurement.
 
 ### Fixed
 
