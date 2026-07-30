@@ -5,7 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-07-30
+
+One change: the plain-string options now warn. Nothing else moves, and no result changes.
+
+This is the release 1.0.0 was waiting on. The policy is that anything removed in a major release
+warns for at least one minor release first, so strings could not be removed until this shipped.
 
 ### Changed
 
