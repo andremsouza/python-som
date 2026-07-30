@@ -106,6 +106,12 @@ analysis = [
     "pylint==4.0.6",
 ]
 # Restores the install set that 0.3.0 pulled in by default, for anyone who was relying on it.
+# scikit-learn integration. The core never imports it; only python_som.sklearn does, and that module
+# exists because these paths need `__sklearn_tags__`, which in practice means inheriting BaseEstimator.
+# A lower bound rather than a pin: this is a user-facing install set, not tooling.
+sklearn = [
+    "scikit-learn>=1.4",
+]
 examples = [
     "matplotlib>=3.8",
     "pandas>=2.0",
@@ -162,6 +168,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Tests must be able to build a DataFrame to exercise the port, and to compare our PCA against
 # sklearn's differentially. The ban protects the core, not the suite that checks it.
+# The scikit-learn adapter is the module that exists to import scikit-learn.
+"src/python_som/sklearn.py" = ["TID251"]
+"tests/test_sklearn_adapter.py" = ["TID251"]
 "tests/*" = [
     "TID251",
     # Tests reach into private helpers deliberately; that is what is under test.
@@ -204,6 +213,14 @@ enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 [[tool.mypy.overrides]]
 module = ["sklearn.*"]
 ignore_missing_imports = true
+
+# scikit-learn ships no py.typed, so mypy sees BaseEstimator as Any and --strict refuses to subclass
+# it. Relaxed for the adapter module alone, which is the only place that inherits from scikit-learn;
+# everything else stays under full strictness. The alternative, a blanket type: ignore on the class,
+# would hide any *other* subclassing mistake in the same file.
+[[tool.mypy.overrides]]
+module = ["python_som.sklearn"]
+disallow_subclassing_any = false
 
 [tool.pytest.ini_options]
 minversion = "8.0"

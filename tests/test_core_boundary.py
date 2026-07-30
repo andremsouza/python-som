@@ -76,18 +76,41 @@ def test_no_core_module_imports_sklearn() -> None:
 def test_the_whole_package_is_numpy_only_at_runtime() -> None:
     """The shell, not just the core. This is what the 264 MB saving actually rests on.
 
-    Scans every module under ``src/`` rather than only ``_core/``, because after 0.4.0 no module in
-    the package imports pandas or scikit-learn -- the port is ``np.asarray`` and the PCA is
-    ``np.linalg.svd``. A `per-file-ignores` entry restoring either would pass ruff silently.
+    Scans every module under ``src/`` rather than only ``_core/``, because after 0.4.0 no module on
+    the import path of ``python_som`` reaches pandas or scikit-learn: the port is ``np.asarray`` and
+    the PCA is ``np.linalg.svd``. A `per-file-ignores` entry restoring either would pass ruff
+    silently.
+
+    ``sklearn.py`` is exempt and is the *only* exemption. It is the adapter whose entire job is to
+    import scikit-learn, it is never imported by anything else in the package, and
+    ``tests/test_sklearn_adapter.py`` asserts that importing ``python_som`` does not pull it in. An
+    adapter may depend on the thing it adapts; that is what makes it an adapter rather than a
+    dependency.
     """
     package = pathlib.Path(python_som.__file__).parent
     banned = {"pandas", "sklearn", "scipy"}
+    exempt = {"sklearn.py"}
     offenders = {
         str(path.relative_to(package)): sorted(_imports_of(path) & banned)
         for path in package.rglob("*.py")
-        if _imports_of(path) & banned
+        if path.name not in exempt and _imports_of(path) & banned
     }
     assert not offenders, f"runtime modules must not import {banned}: {offenders}"
+
+
+def test_the_only_module_allowed_to_import_sklearn_is_the_adapter() -> None:
+    """State the exemption positively, so it cannot quietly grow.
+
+    The test above skips ``sklearn.py`` by name. This one asserts that the skip covers exactly one
+    module, so adding a second scikit-learn import anywhere would need a deliberate edit here.
+    """
+    package = pathlib.Path(python_som.__file__).parent
+    users = sorted(
+        str(path.relative_to(package))
+        for path in package.rglob("*.py")
+        if "sklearn" in _imports_of(path)
+    )
+    assert users == ["sklearn.py"], users
 
 
 def test_every_core_module_is_importable() -> None:
