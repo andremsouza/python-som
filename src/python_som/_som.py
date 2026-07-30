@@ -492,6 +492,198 @@ class SOM:
         """
         return self._last_report
 
+    # ------------------------------------------------------------------ estimator interface
+
+    # These delegate to `train`, `activate` and `winner` rather than adding behaviour, which by
+    # Ousterhout's definition (A Philosophy of Software Design, 7.1) makes them pass-through methods
+    # and ordinarily a smell. They are here because their value is conformance to an external
+    # convention rather than abstraction: scikit-learn's `Pipeline`, `GridSearchCV` and
+    # `cross_val_score` call these exact names, and `KMeans` is the precedent a SOM should follow
+    # since it is a topologically-constrained k-means. `train` stays the primary method, which is
+    # also what users of minisom expect.
+    #
+    # Keeping them one-liners is deliberate: two ways to train that cannot drift apart.
+    #
+    # Full scikit-learn integration needs more than these names -- since 1.7 `Pipeline.predict` and
+    # `GridSearchCV` require `__sklearn_tags__` -- and lives in `python_som.sklearn`.
+
+    def fit(
+        self,
+        X: DataLike,  # noqa: N803  the estimator convention capitalises the design matrix
+        y: object = None,  # noqa: ARG002  accepted and ignored, as the convention requires
+        *,
+        n_iteration: int | None = None,
+        mode: TrainingMode | TrainingModeStr = TrainingMode.RANDOM,
+        verbose: bool = False,
+    ) -> SOM:
+        """Train the map and return it, so calls can be chained.
+
+        ``y`` is accepted and ignored. Unsupervised estimators take it anyway, because that is what
+        lets ``Pipeline`` and ``cross_val_score`` call every step in the same way.
+
+        The training options are keyword arguments here rather than constructor arguments, so that
+        :class:`SOM` keeps one place where training is configured. The scikit-learn adapter in
+        :mod:`python_som.sklearn` takes them at construction instead, because ``get_params`` has to
+        expose them for ``GridSearchCV`` to tune them.
+
+        :param X: Training dataset of shape ``(n_samples, n_features)``.
+        :param y: Ignored.
+        :param n_iteration: Number of iterations. Defaults as for :meth:`train`.
+        :param mode: Training mode.
+        :param verbose: Whether to show a progress bar.
+        :return: This map, trained.
+        """
+        self.train(X, n_iteration=n_iteration, mode=mode, verbose=verbose)
+        return self
+
+    def transform(self, X: DataLike) -> npt.NDArray[np.floating]:  # noqa: N803
+        """Return the distance from each sample to every model.
+
+        The counterpart of ``KMeans.transform``, which "transforms X to a cluster-distance space".
+        Here the space has one dimension per node, so the result is ``(n_samples, x * y)`` with the
+        grid flattened in C order.
+
+        :param X: Dataset of shape ``(n_samples, n_features)``.
+        :return: Distances of shape ``(n_samples, x * y)``.
+        """
+        array = to_numpy(X)
+        return np.array([self.activate(sample).ravel() for sample in array])
+
+    def fit_transform(
+        self,
+        X: DataLike,  # noqa: N803
+        y: object = None,  # noqa: ARG002
+        **kwargs: Any,  # noqa: ANN401
+    ) -> npt.NDArray[np.floating]:
+        """Train on ``X`` and return its distances to every model.
+
+        :param X: Training dataset.
+        :param y: Ignored.
+        :param kwargs: Passed to :meth:`fit`.
+        :return: Distances of shape ``(n_samples, x * y)``.
+        """
+        return self.fit(X, **kwargs).transform(X)
+
+    def predict(self, X: DataLike) -> npt.NDArray[np.integer]:  # noqa: N803
+        """Return the index of the best-matching node for each sample.
+
+        A **flat** index, not a ``(row, column)`` pair. A 1-D array of labels is what scorers,
+        ``confusion_matrix`` and ``cross_val_score`` all assume, so returning coordinates would read
+        better for a grid and compose with nothing. Recover the grid position with
+        ``np.unravel_index(som.predict(X), som.get_shape())``, or call :meth:`winner` for a single
+        sample, which still returns ``(row, column)``.
+
+        :param X: Dataset of shape ``(n_samples, n_features)``.
+        :return: One flat node index per sample.
+        """
+        array = to_numpy(X)
+        shape = self._shape
+        return np.array(
+            [np.ravel_multi_index(self.winner(sample), shape) for sample in array], dtype=int
+        )
+
+    def score(self, X: DataLike, y: object = None) -> float:  # noqa: ARG002, N803
+        """Return the negated quantization error, so that larger is better.
+
+        The sign is the convention every scikit-learn scorer follows: ``GridSearchCV`` maximises,
+        and quantization error is something to minimise. Without the negation a parameter search
+        would confidently select the worst map.
+
+        :param X: Dataset to score.
+        :param y: Ignored.
+        :return: Negated mean quantization error.
+        """
+        return -self.quantization_error(X)
+
+    def get_params(self, *, deep: bool = True) -> dict[str, Any]:  # noqa: ARG002
+        """Return the constructor arguments that describe this map.
+
+        Strategies come back as the callables or names that were passed in, so that
+        ``SOM(**som.get_params())`` rebuilds an equivalent map. That is what ``clone`` relies on.
+
+        :param deep: Accepted for signature compatibility; this estimator holds no sub-estimators.
+        :return: Constructor arguments by name.
+        """
+        return {
+            "x": self._shape[0],
+            "y": self._shape[1],
+            "input_len": self._input_len,
+            "learning_rate": self._learning_rate,
+            "learning_rate_decay": self._learning_rate_decay,
+            "neighborhood_radius": self._neighborhood_radius,
+            "neighborhood_radius_decay": self._neighborhood_radius_decay,
+            "neighborhood_function": self._neighborhood_function_name,
+            "distance_function": self._distance_function,
+            "cyclic_x": self._cyclic[0],
+            "cyclic_y": self._cyclic[1],
+            "random_seed": self._random_seed,
+            "min_neighborhood_radius": self._min_neighborhood_radius,
+        }
+
+    def set_params(self, **params: Any) -> SOM:  # noqa: ANN401
+        """Set constructor-level parameters in place and return this map.
+
+        Only the parameters that can be changed without rebuilding the models are accepted: the
+        rates, the radii and the decays. Changing the grid shape or ``input_len`` would invalidate
+        the weights, so those raise rather than silently leaving a map whose models do not match its
+        own description.
+
+        This is what :meth:`set_learning_rate` and :meth:`set_neighborhood_radius` will become; both
+        still work and are removed in 1.0.0.
+
+        :param params: Parameters to set.
+        :return: This map.
+        :raises ValueError: If a parameter is unknown or cannot be changed after construction.
+        """
+        settable = {
+            "learning_rate": "_learning_rate",
+            "learning_rate_decay": "_learning_rate_decay",
+            "neighborhood_radius": "_neighborhood_radius",
+            "neighborhood_radius_decay": "_neighborhood_radius_decay",
+            "min_neighborhood_radius": "_min_neighborhood_radius",
+            "distance_function": "_distance_function",
+        }
+        for name, value in params.items():
+            if name in settable:
+                setattr(self, settable[name], value)
+            elif name in self.get_params():
+                msg = (
+                    f"{name!r} cannot be changed after construction: the models would no longer "
+                    f"match it. Build a new SOM instead. Settable: {sorted(settable)}"
+                )
+                raise ValueError(msg)
+            else:
+                msg = f"Unknown parameter {name!r}. Valid parameters: {sorted(self.get_params())}"
+                raise ValueError(msg)
+        _validate_learning_rate(self._learning_rate)
+        return self
+
+    @property
+    def weights_(self) -> npt.NDArray[np.floating]:
+        """The models, under the trailing-underscore name the estimator convention uses.
+
+        :return: Models of shape ``(x, y, n_features)``.
+        """
+        return self.get_weights()
+
+    @property
+    def n_features_in_(self) -> int:
+        """Number of features the map accepts, as ``KMeans`` reports it.
+
+        :return: Number of features.
+        """
+        return self._input_len
+
+    @property
+    def quantization_error_(self) -> float | None:
+        """Quantization error of the last training run, or None before the first.
+
+        The counterpart of ``KMeans.inertia_``.
+
+        :return: The error, or None.
+        """
+        return None if self._last_report is None else self._last_report.quantization_error
+
     # ------------------------------------------------------------------ artifacts
 
     def config(self) -> SOMConfig:

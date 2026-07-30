@@ -35,6 +35,7 @@ nav:
       - Save and load a map: how-to/save-and-load-a-map.md
       - Reproduce a result: how-to/reproduce-a-result.md
       - Use a custom strategy: how-to/use-a-custom-strategy.md
+      - Use the estimator interface: how-to/use-with-scikit-learn.md
   - Reference:
       - Options and types: reference/options.md
       - Neighborhood functions: reference/neighborhood-functions.md
