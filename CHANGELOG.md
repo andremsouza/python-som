@@ -5,14 +5,43 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Plain strings now emit `DeprecationWarning`.** 0.4.0 deprecated them in writing only, because
+  `mode="batch"` was what the documentation showed at the time. This is the warning that follows the
+  written notice, and it is the last step before 1.0.0 removes strings entirely.
+
+  The message names the exact replacement, so migrating is a substitution you read off it:
+
+  ```
+  Passing mode='batch' as a plain string is deprecated and will stop working in 1.0.0.
+  Use TrainingMode.BATCH instead.
+  ```
+
+  Two things it deliberately does not do. It does not fire for a spelling that was never valid, so
+  `mode="stochastic"` still raises its `ValueError` instead of burying the real mistake under a
+  deprecation notice. And it does not fire when a map is loaded from a `.npz`: the name in an
+  artifact is a serialisation detail, since JSON has no enums, so the loader converts it rather than
+  warning about a string the caller never wrote.
+
+  To silence it while migrating, filter `DeprecationWarning` for the `python_som` module.
+
+### Fixed
+
+- Error messages showed an enum's repr when one was passed. `weight_initialization(mode=WeightInit
+  .LINEAR)` reported `<WeightInit.LINEAR: 'linear'> initialization requires ...`. Both spellings now
+  produce identical text.
+
 ## [0.4.0] - 2026-07-30
 
 `numpy` is now the only runtime dependency, and a trained map can be saved without `pickle`.
 
 **Results change in two places.** Linear initialization is corrected for data far from the origin,
 where 0.3.0 was wrong by up to 5.8%; and anyone who imported pandas or scikit-learn transitively
-through this package must now depend on them directly. Everything else is additive: no public name or
-signature is removed, and `mode="batch"` and the other plain strings keep working.
+through this package must now depend on them directly. Everything else is additive: no public name
+or signature is removed, and `mode="batch"` and the other plain strings keep working.
 
 To reproduce a figure made with an earlier version, pin that version.
 
@@ -113,13 +142,13 @@ To reproduce a figure made with an earlier version, pin that version.
 
 - **Batch training is 1.2x to 1.5x faster**, with identical results. Eq. (8) needs the neighborhood
   between every pair of nodes, and the previous implementation got it by evaluating the neighborhood
-  function once per node, once per iteration, which is 1600 full-grid evaluations per iteration on a 40x40
+  function once per node, once per iteration: 1600 full-grid evaluations per iteration on a 40x40
   map. Profiling made that 42% of batch training, more than the contraction it feeds.
 
   It is unnecessary, because a neighborhood depends only on the offset between two nodes and never
   on where the winner sits. One kernel over every reachable offset serves the whole grid, and
-  each node's neighborhood is a slice of it, as a view rather than a copy. The kernel costs `4xy` floats,
-  111 KB on a 60x60 map, against the 800 MB a full `(x, y, x, y)` tensor would need.
+  each node's neighborhood is a slice of it, as a view rather than a copy. The kernel is `4xy`
+  floats, 111 KB on a 60x60 map, against the 800 MB a full `(x, y, x, y)` tensor would need.
 
   The offset-only dependence holds on a torus as well as a flat grid, because making the fold depend
   on the offset alone is exactly what the minimum-image convention does. It holds per axis, so mixed

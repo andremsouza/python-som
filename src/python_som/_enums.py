@@ -4,9 +4,10 @@ Every option these cover is still accepted as a plain string, and will be for th
 0.5.x series. ``mode=TrainingMode.BATCH`` and ``mode="batch"`` are interchangeable, compare equal,
 hash equal, and serialise to the same JSON, because each member *is* a ``str``.
 
-**Deprecation runway.** Plain strings are deprecated as of 0.4.0 but emit nothing: warning
-immediately would fire on ``mode="batch"``, which is what the README and every documentation page
-currently show. They begin emitting ``DeprecationWarning`` in 0.5.0 and are removed in 1.0.0.
+**Deprecation runway.** Plain strings are deprecated as of 0.4.0 and emit ``DeprecationWarning``
+from 0.5.0. 0.4.0 deliberately warned about nothing, because ``mode="batch"`` was what every
+documentation page showed at the time, so the written notice came first and this is the warning that
+follows it. 1.0.0 removes strings entirely, and :func:`warn_if_string` goes with them.
 
 **On the base class.** ``enum.StrEnum`` arrived in Python 3.11 and this package supports 3.10, so
 :class:`_StrEnum` reproduces it. A bare ``class X(str, Enum)`` is *not* equivalent: its ``str()``
@@ -17,6 +18,7 @@ identical on every supported version, which was checked on 3.10, 3.12 and 3.13 r
 
 from __future__ import annotations
 
+import warnings
 from enum import Enum
 from typing import Literal
 
@@ -29,6 +31,7 @@ __all__ = [
     "TrainingModeStr",
     "WeightInit",
     "WeightInitStr",
+    "warn_if_string",
 ]
 
 
@@ -107,3 +110,48 @@ WeightInitStr = Literal["random", "linear", "sample"]
 
 #: Accepted strings for the ``sample_mode`` argument of random initialization.
 SampleModeStr = Literal["standard_normal", "uniform"]
+
+
+#: Names that are accepted but have no member of their own, mapped to the member that replaces them.
+#: ``mexicanhat`` is the spelling the original contribution used; the enum carries one canonical
+#: spelling per option, so this is where the other one is answered for.
+_LEGACY_SPELLINGS = {"mexicanhat": "Neighborhood.MEXICAN_HAT"}
+
+
+def warn_if_string(value: object, enum: type[Enum], parameter: str, *, stacklevel: int = 3) -> None:
+    """Emit a ``DeprecationWarning`` when a plain string is passed instead of an enum member.
+
+    An enum member *is* a ``str``, so the test is "a string that is not one of ours" rather than
+    ``isinstance(value, str)``, which would fire on the enum too.
+
+    Only *valid* spellings warn. A string naming nothing returns silently and is left to whatever
+    validates it, so ``mode="stochastic"`` still raises its ``ValueError`` rather than surfacing a
+    deprecation notice about a spelling that never worked.
+
+    The message names the exact replacement rather than describing one. A deprecation warning that
+    makes the reader work out the substitution is a deprecation warning people silence.
+
+    :param value: What the caller passed.
+    :param enum: The enum that should replace a string here.
+    :param parameter: Name of the parameter, for the message.
+    :param stacklevel: Frames to skip so the warning blames the caller's line rather than this one.
+    """
+    if isinstance(value, enum) or not isinstance(value, str):
+        return
+
+    try:
+        replacement = f"{enum.__name__}.{enum(value).name}"
+    except ValueError:
+        replacement = _LEGACY_SPELLINGS.get(value, "")
+        if not replacement:
+            # Not a value this enum knows and not a legacy alias, so it is simply wrong. Whoever
+            # validates it will say so; telling the caller to modernise a spelling that was never
+            # valid would bury the actual error under a deprecation notice.
+            return
+
+    warnings.warn(
+        f"Passing {parameter}={value!r} as a plain string is deprecated and will stop working in "
+        f"1.0.0. Use {replacement} instead.",
+        DeprecationWarning,
+        stacklevel=stacklevel,
+    )

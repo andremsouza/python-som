@@ -10,6 +10,7 @@ import sklearn.decomposition
 import sklearn.preprocessing
 
 import python_som
+from python_som import Neighborhood
 from tests.conftest import SEED, make_som
 
 if TYPE_CHECKING:
@@ -137,7 +138,7 @@ def test_setters_update_the_hyperparameters() -> None:
 
 
 def test_neighborhood_is_reachable_from_the_public_api() -> None:
-    som = make_som(x=9, y=9, neighborhood_function="mexicanhat")
+    som = make_som(x=9, y=9, neighborhood_function=Neighborhood.MEXICAN_HAT)
     h = som.neighborhood((4, 4), 2.0)
     assert h.shape == (9, 9)
     assert h[4, 4] == pytest.approx(1.0)

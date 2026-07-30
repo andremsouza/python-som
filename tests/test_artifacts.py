@@ -25,7 +25,14 @@ import numpy as np
 import pytest
 
 import python_som
-from python_som import ArtifactError, Neighborhood, SOMConfig, TrainingMode, TrainingReport
+from python_som import (
+    ArtifactError,
+    Neighborhood,
+    SOMConfig,
+    TrainingMode,
+    TrainingReport,
+    WeightInit,
+)
 from python_som._artifact import FORMAT_VERSION
 from python_som._core._decay import DECAY_FUNCTIONS
 from python_som._core._distance import DISTANCE_FUNCTIONS
@@ -52,7 +59,7 @@ def _trained(**kwargs: Any) -> python_som.SOM:  # noqa: ANN401
     """
     data = _data()
     som = python_som.SOM(x=7, y=5, input_len=4, random_seed=11, **kwargs)
-    som.weight_initialization(mode="linear", data=data)
+    som.weight_initialization(mode=WeightInit.LINEAR, data=data)
     som.train(data, n_iteration=20, mode=TrainingMode.BATCH)
     return som
 
@@ -85,12 +92,12 @@ def test_continuing_to_train_a_loaded_map_matches_never_having_stopped(
     data = _data()
 
     uninterrupted = python_som.SOM(x=6, y=5, input_len=4, random_seed=3)
-    uninterrupted.weight_initialization(mode="linear", data=data)
+    uninterrupted.weight_initialization(mode=WeightInit.LINEAR, data=data)
     uninterrupted.train(data, n_iteration=20, mode=TrainingMode.RANDOM)
     uninterrupted.train(data, n_iteration=20, mode=TrainingMode.RANDOM)
 
     interrupted = python_som.SOM(x=6, y=5, input_len=4, random_seed=3)
-    interrupted.weight_initialization(mode="linear", data=data)
+    interrupted.weight_initialization(mode=WeightInit.LINEAR, data=data)
     interrupted.train(data, n_iteration=20, mode=TrainingMode.RANDOM)
     path = tmp_path / "checkpoint.npz"
     interrupted.save_npz(path)
@@ -112,7 +119,7 @@ def test_reseeding_instead_of_restoring_state_would_diverge(tmp_path: pathlib.Pa
     """
     data = _data()
     som = python_som.SOM(x=6, y=5, input_len=4, random_seed=3)
-    som.weight_initialization(mode="linear", data=data)
+    som.weight_initialization(mode=WeightInit.LINEAR, data=data)
     som.train(data, n_iteration=20, mode=TrainingMode.RANDOM)
     path = tmp_path / "map.npz"
     som.save_npz(path)
@@ -192,7 +199,7 @@ def test_every_neighborhood_round_trips(neighborhood: Neighborhood, tmp_path: pa
     """The mexican hat included, which cannot be trained in batch but can certainly be saved."""
     data = _data()
     som = python_som.SOM(x=6, y=4, input_len=4, neighborhood_function=neighborhood, random_seed=9)
-    som.weight_initialization(mode="linear", data=data)
+    som.weight_initialization(mode=WeightInit.LINEAR, data=data)
     path = tmp_path / f"{neighborhood.value}.npz"
     som.save_npz(path)
 
@@ -578,7 +585,7 @@ def test_a_config_can_be_built_by_hand() -> None:
         neighborhood_radius=1.0,
         min_neighborhood_radius=0.5,
         cyclic=(False, True),
-        neighborhood_function="gaussian",
+        neighborhood_function=Neighborhood.GAUSSIAN,
         learning_rate_decay="asymptotic_decay",
         neighborhood_radius_decay="asymptotic_decay",
         distance_function="euclidean_distance",
@@ -660,3 +667,49 @@ def test_an_artifact_with_no_rng_state_still_loads(tmp_path: pathlib.Path) -> No
     loaded = python_som.SOM.load_npz(stateless)
     assert np.abs(loaded.get_weights() - som.get_weights()).max() == 0.0
     assert loaded.get_random_seed() == 11
+
+
+@pytest.mark.parametrize(
+    ("stored", "expected"),
+    [
+        ("gaussian", Neighborhood.GAUSSIAN),
+        ("mexican_hat", Neighborhood.MEXICAN_HAT),
+        ("mexicanhat", Neighborhood.MEXICAN_HAT),
+        ("sombrero", "sombrero"),
+    ],
+    ids=["member", "canonical-alias-target", "legacy-spelling", "unknown"],
+)
+def test_a_stored_neighborhood_name_becomes_the_member_it_denotes(
+    stored: str, expected: object
+) -> None:
+    """Loading a map must not warn the caller about a string they never wrote.
+
+    The name in an artifact is a serialisation detail: JSON has no enums. Handing it straight to the
+    constructor would emit the plain-string ``DeprecationWarning`` for something the file chose, not
+    the caller. ``mexicanhat`` has no member of its own and is an alias for the same function, so it
+    maps to ``MEXICAN_HAT``.
+
+    An unrecognised name is returned unchanged, so a corrupt artifact still gets the constructor's
+    error rather than having it swallowed here.
+    """
+    from python_som._artifact import _as_neighborhood  # noqa: PLC0415
+
+    assert _as_neighborhood(stored) == expected
+
+
+def test_loading_a_map_does_not_warn_about_deprecated_spellings(tmp_path: pathlib.Path) -> None:
+    """The behaviour the conversion above exists for, asserted end to end."""
+    # Stepwise, because the mexican hat is signed and batch rejects it.
+    data = _data()
+    som = python_som.SOM(
+        x=6, y=5, input_len=4, neighborhood_function=Neighborhood.MEXICAN_HAT, random_seed=11
+    )
+    som.weight_initialization(mode=WeightInit.LINEAR, data=data)
+    som.train(data, n_iteration=10, mode=TrainingMode.RANDOM)
+    path = tmp_path / "m.npz"
+    som.save_npz(path)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        loaded = python_som.SOM.load_npz(path)
+    assert np.abs(loaded.get_weights() - som.get_weights()).max() == 0.0

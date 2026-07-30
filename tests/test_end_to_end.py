@@ -10,15 +10,11 @@ so the same code path is exercised over synthetic clusters instead.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import numpy as np
 import pytest
 
-if TYPE_CHECKING:  # pragma: no cover
-    from python_som._enums import TrainingModeStr
-
 import python_som
+from python_som import TrainingMode, WeightInit
 from tests.conftest import SEED
 
 pytestmark = pytest.mark.slow
@@ -47,8 +43,8 @@ def test_batch_training_separates_known_clusters(
     """The whole point of the library, asserted once: structure in, structure on the grid."""
     data, labels = clusters
     som = python_som.SOM(x=12, y=12, input_len=5, neighborhood_radius=4.0, random_seed=SEED)
-    som.weight_initialization(mode="linear", data=data)
-    error = som.train(data, n_iteration=40, mode="batch")
+    som.weight_initialization(mode=WeightInit.LINEAR, data=data)
+    error = som.train(data, n_iteration=40, mode=TrainingMode.BATCH)
 
     # every cluster claims at least one node, and almost every occupied node is label-pure
     label_map = som.label_map(data, labels)
@@ -72,20 +68,20 @@ def test_the_u_matrix_shows_the_cluster_boundaries(
     data, _ = clusters
     untrained = python_som.SOM(x=12, y=12, input_len=5, random_seed=SEED)
     trained = python_som.SOM(x=12, y=12, input_len=5, neighborhood_radius=4.0, random_seed=SEED)
-    trained.weight_initialization(mode="linear", data=data)
-    trained.train(data, n_iteration=40, mode="batch")
+    trained.weight_initialization(mode=WeightInit.LINEAR, data=data)
+    trained.train(data, n_iteration=40, mode=TrainingMode.BATCH)
 
     assert np.ptp(trained.distance_matrix()) > np.ptp(untrained.distance_matrix())
 
 
-@pytest.mark.parametrize("mode", ["random", "sequential", "batch"])
+@pytest.mark.parametrize("mode", list(TrainingMode))
 def test_every_mode_reaches_a_usable_map(
-    mode: TrainingModeStr, clusters: tuple[np.ndarray, np.ndarray]
+    mode: TrainingMode, clusters: tuple[np.ndarray, np.ndarray]
 ) -> None:
     """All three training modes must produce finite models and reduce the error."""
     data, _ = clusters
     som = python_som.SOM(x=10, y=10, input_len=5, neighborhood_radius=3.0, random_seed=SEED)
-    som.weight_initialization(mode="linear", data=data)
+    som.weight_initialization(mode=WeightInit.LINEAR, data=data)
     before = som.quantization_error(data)
     after = som.train(data, n_iteration=60, mode=mode)
 
@@ -109,8 +105,8 @@ def test_a_toroidal_map_has_no_edge(clusters: tuple[np.ndarray, np.ndarray]) -> 
         cyclic_y=True,
         random_seed=SEED,
     )
-    som.weight_initialization(mode="linear", data=data)
-    som.train(data, n_iteration=60, mode="batch")
+    som.weight_initialization(mode=WeightInit.LINEAR, data=data)
+    som.train(data, n_iteration=60, mode=TrainingMode.BATCH)
 
     counts = som.activation_matrix(data)
     top_half = counts[:4].sum()

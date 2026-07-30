@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from python_som import TrainingMode, WeightInit
 from tests.conftest import SEED, make_som
 
 
@@ -31,7 +32,7 @@ def test_training_agrees_across_input_types(variants: dict[str, Any]) -> None:
     weights = []
     for v in variants.values():
         som = make_som(x=6, y=6, random_seed=SEED)
-        som.train(v, n_iteration=20, mode="batch")
+        som.train(v, n_iteration=20, mode=TrainingMode.BATCH)
         weights.append(som.get_weights())
     np.testing.assert_allclose(weights[0], weights[1])
     np.testing.assert_allclose(weights[0], weights[2])
@@ -47,7 +48,7 @@ def test_linear_init_agrees_across_input_types(variants: dict[str, Any]) -> None
     weights = []
     for v in variants.values():
         som = make_som(x=5, y=5)
-        som.weight_initialization(mode="linear", data=v)
+        som.weight_initialization(mode=WeightInit.LINEAR, data=v)
         weights.append(som.get_weights())
     np.testing.assert_allclose(weights[0], weights[1])
     np.testing.assert_allclose(weights[0], weights[2])
@@ -70,11 +71,11 @@ def test_labels_accept_strings(blobs: np.ndarray) -> None:
 def test_a_single_feature_dataset_works() -> None:
     data = np.linspace(0, 1, 20).reshape(-1, 1)
     som = make_som(x=4, y=3, input_len=1)
-    som.train(data, n_iteration=10, mode="batch")
+    som.train(data, n_iteration=10, mode=TrainingMode.BATCH)
     assert np.isfinite(som.get_weights()).all()
 
 
 def test_a_single_sample_dataset_works() -> None:
     som = make_som(x=3, y=3, input_len=3)
-    som.train(np.array([[1.0, 2.0, 3.0]]), n_iteration=3, mode="batch")
+    som.train(np.array([[1.0, 2.0, 3.0]]), n_iteration=3, mode=TrainingMode.BATCH)
     assert np.isfinite(som.get_weights()).all()

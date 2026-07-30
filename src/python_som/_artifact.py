@@ -35,6 +35,7 @@ import numpy as np
 from ._core._decay import DECAY_FUNCTIONS, resolve_decay
 from ._core._distance import DISTANCE_FUNCTIONS, resolve_distance
 from ._core._neighborhood import NEIGHBORHOOD_FUNCTIONS
+from ._enums import Neighborhood
 
 if TYPE_CHECKING:  # pragma: no cover
     import os
@@ -63,6 +64,10 @@ _MEMBERS = ("weights", "metadata")
 
 #: A weight array is ``(x, y, n_features)``, by definition.
 _WEIGHT_DIMENSIONS = 3
+
+#: Spellings that resolve but have no enum member of their own. An artifact written before the enums
+#: existed can carry one, and it means the same function.
+_LEGACY_NEIGHBORHOOD_ALIASES = {"mexicanhat": Neighborhood.MEXICAN_HAT}
 
 #: Which config fields name a callable, and the registry that restores each. The loader walks this
 #: rather than repeating four near-identical branches.
@@ -305,6 +310,23 @@ class Strategies:
     distance_function: DistanceFunction
 
 
+def _as_neighborhood(name: str) -> Neighborhood | str:
+    """Turn a stored neighborhood name into the enum member it denotes.
+
+    Returns the name unchanged when it names nothing this package knows, so the constructor still
+    raises the error a corrupt artifact deserves rather than this function swallowing it.
+
+    :param name: Name as recorded in the artifact.
+    :return: The matching member, or the name unchanged.
+    """
+    if name in _LEGACY_NEIGHBORHOOD_ALIASES:
+        return _LEGACY_NEIGHBORHOOD_ALIASES[name]
+    try:
+        return Neighborhood(name)
+    except ValueError:
+        return name
+
+
 def resolve_strategies(config: SOMConfig, overrides: Mapping[str, Any]) -> Strategies:
     """Turn the saved strategy names back into callables, honouring any the caller supplied.
 
@@ -339,10 +361,15 @@ def resolve_strategies(config: SOMConfig, overrides: Mapping[str, Any]) -> Strat
         """
         return supplied[key] if key in supplied else resolve(name)
 
-    # The neighborhood is the one the constructor takes by name as well as by callable, so the saved
-    # name is passed straight through unless the caller overrode it.
+    # The constructor takes the neighborhood by name as well as by callable. The saved name is a
+    # *string*, because JSON has no enums, and handing it straight to the constructor would emit the
+    # plain-string DeprecationWarning for something the caller never wrote. So convert it to the
+    # member it denotes. The legacy "mexicanhat" spelling has no member of its own and is an alias
+    # for the same function, so it maps to MEXICAN_HAT.
     return Strategies(
-        neighborhood_function=supplied.get("neighborhood_function", config.neighborhood_function),
+        neighborhood_function=supplied.get(
+            "neighborhood_function", _as_neighborhood(config.neighborhood_function)
+        ),
         learning_rate_decay=either(
             "learning_rate_decay", resolve_decay, config.learning_rate_decay
         ),
