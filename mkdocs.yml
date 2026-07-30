@@ -32,6 +32,7 @@ nav:
   - Getting started: getting-started.md
   - Neighborhood functions: neighborhood-functions.md
   - Training modes: training-modes.md
+  - Options and types: options-and-types.md
   - API reference: api.md
   - Changelog: changelog.md
 

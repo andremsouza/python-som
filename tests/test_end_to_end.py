@@ -10,8 +10,13 @@ so the same code path is exercised over synthetic clusters instead.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
+
+if TYPE_CHECKING:  # pragma: no cover
+    from python_som._enums import TrainingModeStr
 
 import python_som
 from tests.conftest import SEED
@@ -75,7 +80,7 @@ def test_the_u_matrix_shows_the_cluster_boundaries(
 
 @pytest.mark.parametrize("mode", ["random", "sequential", "batch"])
 def test_every_mode_reaches_a_usable_map(
-    mode: str, clusters: tuple[np.ndarray, np.ndarray]
+    mode: TrainingModeStr, clusters: tuple[np.ndarray, np.ndarray]
 ) -> None:
     """All three training modes must produce finite models and reduce the error."""
     data, _ = clusters

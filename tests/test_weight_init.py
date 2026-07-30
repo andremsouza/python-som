@@ -114,7 +114,8 @@ def test_random_init_rejects_an_unknown_sample_mode() -> None:
 def test_unknown_initialization_mode_raises() -> None:
     som = make_som(x=4, y=4)
     with pytest.raises(ValueError, match="mode"):
-        som.weight_initialization(mode="spectral")
+        # Deliberately invalid; see the note in test_construction.py.
+        som.weight_initialization(mode="spectral")  # type: ignore[arg-type]
 
 
 def test_initialization_is_reproducible_from_the_seed() -> None:

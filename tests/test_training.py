@@ -7,8 +7,13 @@ iteration count is honoured, that a training step cannot divide by a vanishing d
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
+
+if TYPE_CHECKING:  # pragma: no cover
+    from python_som._enums import TrainingModeStr
 
 import python_som
 from tests.conftest import SEED, make_som
@@ -43,7 +48,7 @@ def test_batch_preserves_finiteness(blobs: np.ndarray) -> None:
 
 
 @pytest.mark.parametrize("mode", ["random", "sequential", "batch"])
-def test_training_reduces_quantization_error(mode: str, blobs: np.ndarray) -> None:
+def test_training_reduces_quantization_error(mode: TrainingModeStr, blobs: np.ndarray) -> None:
     """Training should fit the data better than the initial state."""
     som = make_som(x=8, y=8, neighborhood_radius=2.0, learning_rate=0.5)
     before = som.quantization_error(blobs)
@@ -53,7 +58,7 @@ def test_training_reduces_quantization_error(mode: str, blobs: np.ndarray) -> No
 
 @pytest.mark.parametrize("mode", ["random", "sequential"])
 def test_stepwise_runs_the_requested_number_of_iterations(
-    mode: str, blobs: np.ndarray, monkeypatch: pytest.MonkeyPatch
+    mode: TrainingModeStr, blobs: np.ndarray, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Regression: sequential mode used to run ``len(data)`` steps regardless of ``n_iteration``.
 
@@ -147,7 +152,7 @@ def test_batch_rejects_the_alias_too(blobs: np.ndarray) -> None:
 
 
 @pytest.mark.parametrize("mode", ["random", "sequential"])
-def test_stepwise_accepts_a_signed_neighborhood(mode: str, blobs: np.ndarray) -> None:
+def test_stepwise_accepts_a_signed_neighborhood(mode: TrainingModeStr, blobs: np.ndarray) -> None:
     """The mexican hat is fine for stepwise training; only the batch mean is undefined."""
     som = make_som(x=12, y=12, neighborhood_function="mexicanhat")
     som.train(blobs, n_iteration=30, mode=mode)
@@ -156,7 +161,7 @@ def test_stepwise_accepts_a_signed_neighborhood(mode: str, blobs: np.ndarray) ->
 
 @pytest.mark.parametrize(("mode", "per_sample"), [("batch", 10), ("sequential", 1000)])
 def test_omitting_n_iteration_uses_the_documented_default(
-    mode: str, per_sample: int, monkeypatch: pytest.MonkeyPatch
+    mode: TrainingModeStr, per_sample: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The default is 1000 iterations per sample for stepwise modes and 10 for batch.
 
@@ -191,7 +196,8 @@ def test_verbose_training_runs_with_a_progress_bar(blobs: np.ndarray) -> None:
 def test_unknown_mode_raises_value_error() -> None:
     som = make_som(x=5, y=5)
     with pytest.raises(ValueError, match="mode"):
-        som.train(np.zeros((4, 3)), n_iteration=1, mode="stochastic")
+        # Deliberately invalid: the Literal annotation is what stops this reaching a caller.
+        som.train(np.zeros((4, 3)), n_iteration=1, mode="stochastic")  # type: ignore[arg-type]
 
 
 def test_empty_dataset_raises_value_error() -> None:

@@ -198,16 +198,63 @@ def test_a_signed_neighborhood_moves_models_away() -> None:
 
 
 # ---------------------------------------------------------------------------------------------
-# The public surface is unchanged by the split
+# The public surface
 # ---------------------------------------------------------------------------------------------
 
-
-def test_public_surface_is_exactly_what_0_3_0_shipped() -> None:
-    """The module split must not add or remove a single public name."""
-    assert sorted(python_som.__all__) == [
+#: Everything 0.3.0 exported. Nothing here may disappear before 1.0.0.
+_SHIPPED_IN_0_3_0 = frozenset(
+    {
         "NEIGHBORHOOD_FUNCTIONS",
         "SIGNED_NEIGHBORHOODS",
         "SOM",
+        "asymptotic_decay",
+        "bubble",
+        "euclidean_distance",
+        "exponential_decay",
+        "gaussian",
+        "inverse_decay",
+        "linear_decay",
+        "mexican_hat",
+    }
+)
+
+
+def test_nothing_that_0_3_0_exported_has_been_removed() -> None:
+    """The compatibility promise, stated separately from the current surface.
+
+    Removing a name is a breaking change and belongs in 1.0.0. Adding one is not, which is why this
+    is a subset check rather than an equality check -- the equality check lives in the test below,
+    where a deliberate addition shows up as a diff to read rather than a failure to explain.
+    """
+    missing = _SHIPPED_IN_0_3_0 - set(python_som.__all__)
+    assert not missing, f"0.3.0 exported these and they are gone: {sorted(missing)}"
+    for name in sorted(_SHIPPED_IN_0_3_0):
+        assert hasattr(python_som, name), f"{name} is in __all__ but not importable"
+
+
+def test_the_public_surface_is_exactly_this() -> None:
+    """Pin the whole surface, so growing it is a decision rather than an accident.
+
+    0.4.0 adds the enums, their ``Literal`` counterparts, and the strategy protocols. All are
+    additive: every existing call keeps working, and the enum members are ``str`` subclasses that
+    compare equal to the strings they replace.
+    """
+    assert sorted(python_som.__all__) == [
+        "DecayFunction",
+        "DistanceFunction",
+        "KernelFunction",
+        "NEIGHBORHOOD_FUNCTIONS",
+        "Neighborhood",
+        "NeighborhoodFunction",
+        "NeighborhoodStr",
+        "SIGNED_NEIGHBORHOODS",
+        "SOM",
+        "SampleMode",
+        "SampleModeStr",
+        "TrainingMode",
+        "TrainingModeStr",
+        "WeightInit",
+        "WeightInitStr",
         "asymptotic_decay",
         "bubble",
         "euclidean_distance",

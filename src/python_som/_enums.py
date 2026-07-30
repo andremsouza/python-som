@@ -1,0 +1,109 @@
+"""Names for the string-valued options, so a typo is a type error rather than a runtime one.
+
+Every option these cover is still accepted as a plain string, and will be for the whole 0.4.x and
+0.5.x series. ``mode=TrainingMode.BATCH`` and ``mode="batch"`` are interchangeable, compare equal,
+hash equal, and serialise to the same JSON, because each member *is* a ``str``.
+
+**Deprecation runway.** Plain strings are deprecated as of 0.4.0 but emit nothing: warning
+immediately would fire on ``mode="batch"``, which is what the README and every documentation page
+currently show. They begin emitting ``DeprecationWarning`` in 0.5.0 and are removed in 1.0.0.
+
+**On the base class.** ``enum.StrEnum`` arrived in Python 3.11 and this package supports 3.10, so
+:class:`_StrEnum` reproduces it. A bare ``class X(str, Enum)`` is *not* equivalent: its ``str()``
+returns ``'X.MEMBER'`` rather than the value, which would put the wrong text into any f-string,
+filename or log line built from a member. Defining ``__str__`` explicitly makes the behaviour
+identical on every supported version, which was checked on 3.10, 3.12 and 3.13 rather than assumed.
+"""
+
+from __future__ import annotations
+
+from enum import Enum
+from typing import Literal
+
+__all__ = [
+    "Neighborhood",
+    "NeighborhoodStr",
+    "SampleMode",
+    "SampleModeStr",
+    "TrainingMode",
+    "TrainingModeStr",
+    "WeightInit",
+    "WeightInitStr",
+]
+
+
+class _StrEnum(str, Enum):
+    """A string enum whose members render as their value on every supported Python version."""
+
+    def __str__(self) -> str:
+        """Return the member's value, as ``enum.StrEnum`` does.
+
+        :return: The string value.
+        """
+        return str(self.value)
+
+
+class TrainingMode(_StrEnum):
+    """How :meth:`~python_som.SOM.train` presents the data.
+
+    ``RANDOM`` and ``SEQUENTIAL`` are the stepwise algorithm of Kohonen (2013) Eq. (3), differing
+    only in the order samples arrive. ``BATCH`` is Eq. (8), which updates every model concurrently.
+    """
+
+    RANDOM = "random"
+    SEQUENTIAL = "sequential"
+    BATCH = "batch"
+
+
+class Neighborhood(_StrEnum):
+    """Which neighborhood function spreads the winner's correction over the grid.
+
+    ``MEXICAN_HAT`` takes negative values and so cannot be used with :attr:`TrainingMode.BATCH`; see
+    :data:`~python_som.SIGNED_NEIGHBORHOODS`. The legacy spelling ``"mexicanhat"`` remains accepted
+    as a plain string and resolves to the same function, but is not given a member of its own: one
+    canonical spelling per option is the point of having an enum.
+    """
+
+    GAUSSIAN = "gaussian"
+    BUBBLE = "bubble"
+    MEXICAN_HAT = "mexican_hat"
+
+
+class WeightInit(_StrEnum):
+    """How :meth:`~python_som.SOM.weight_initialization` seeds the models.
+
+    ``LINEAR`` and ``SAMPLE`` both need a dataset; ``RANDOM`` does not.
+    """
+
+    RANDOM = "random"
+    LINEAR = "linear"
+    SAMPLE = "sample"
+
+
+class SampleMode(_StrEnum):
+    """Which distribution :attr:`WeightInit.RANDOM` draws from."""
+
+    STANDARD_NORMAL = "standard_normal"
+    UNIFORM = "uniform"
+
+
+# The literal spellings, so that passing a plain string is still checked. Annotating these
+# parameters as bare ``str`` would accept ``mode="bacth"`` silently, which is most of what the enums
+# are for; a union of the enum and a ``Literal`` catches the typo and keeps both spellings working.
+#
+# The cost is that code passing a variable of unannotated ``str`` type now needs a cast or a
+# narrowing check. That is the intended trade: an unvalidated string reaching a mode parameter is
+# exactly the case worth surfacing, and it is still accepted at runtime.
+
+#: Accepted strings for :meth:`~python_som.SOM.train`.
+TrainingModeStr = Literal["random", "sequential", "batch"]
+
+#: Accepted strings for ``neighborhood_function``. Includes the legacy ``"mexicanhat"`` spelling,
+#: which has no enum member but still resolves.
+NeighborhoodStr = Literal["gaussian", "bubble", "mexican_hat", "mexicanhat"]
+
+#: Accepted strings for :meth:`~python_som.SOM.weight_initialization`.
+WeightInitStr = Literal["random", "linear", "sample"]
+
+#: Accepted strings for the ``sample_mode`` argument of random initialization.
+SampleModeStr = Literal["standard_normal", "uniform"]

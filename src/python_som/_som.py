@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import warnings
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
@@ -32,13 +33,23 @@ from ._core._neighborhood import (
     resolve_kernel,
 )
 from ._core._update import batch_update, stepwise_update
+from ._enums import (
+    Neighborhood,
+    NeighborhoodStr,
+    SampleMode,
+    TrainingMode,
+    TrainingModeStr,
+    WeightInit,
+    WeightInitStr,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections import Counter
-    from collections.abc import Callable, Iterable
+    from collections.abc import Iterable
 
     from ._convert import DataLike
     from ._core._neighborhood import NeighborhoodFunction
+    from ._core._protocols import DecayFunction, DistanceFunction
 
 try:
     import tqdm
@@ -53,8 +64,10 @@ logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
 
-TRAINING_MODES = ("random", "sequential", "batch")
-INITIALIZATION_MODES = ("random", "linear", "sample")
+#: Accepted values, derived from the enums so the two cannot drift. Kept as plain strings because
+#: they appear verbatim in error messages.
+TRAINING_MODES = tuple(m.value for m in TrainingMode)
+INITIALIZATION_MODES = tuple(m.value for m in WeightInit)
 
 #: Iterations per sample when ``n_iteration`` is not given, by training mode. Kohonen (2013)
 #: Section 3.1: the batch process "usually needs to be reiterated a few to a few dozen times",
@@ -64,6 +77,45 @@ DEFAULT_ITERATIONS_PER_SAMPLE = {"random": 1000, "sequential": 1000, "batch": 10
 #: Width of an automatically drawn seed. 128 bits matches what NumPy's own SeedSequence uses when it
 #: seeds itself from the OS entropy pool.
 _SEED_BITS = 128
+
+
+#: Learning rates above this are accepted but warned about. Kohonen gives no hard upper bound, so
+#: this is a plausibility threshold rather than a limit: Eq. (3) moves a model a fraction
+#: ``alpha * h`` of the way to the sample, and a fraction above 1 overshoots it.
+_IMPLAUSIBLE_LEARNING_RATE = 1.0
+
+
+def _validate_learning_rate(learning_rate: float) -> None:
+    """Reject a learning rate that cannot train, and warn about one that is merely unwise.
+
+    Unchecked through 0.3.0, and the two failure modes are different in kind:
+
+    A **non-positive** rate is rejected. ``alpha = 0`` freezes every model, so training runs to
+    completion and changes nothing. ``alpha = -1`` is worse: it moves models *away* from the samples
+    they match, taking the quantization error from 0.0 to 11.7 and the largest weight to 30 on a map
+    that started inside the unit cube. Neither can be what a caller meant, and both are silent.
+
+    A rate **above 1** is warned about, not rejected. Eq. (3) moves a model a fraction ``alpha * h``
+    of the way to the sample, so above 1 it overshoots and oscillates around the target rather than
+    settling on it. It does not necessarily diverge: measured at ``alpha = 5`` with decay disabled,
+    the largest weight stayed at 3.61, because the neighborhood damps the correction away from the
+    winner. Kohonen sets no upper bound, so rejecting it would invent a limit the sources do not
+    give.
+
+    :param learning_rate: The rate to check.
+    :raises ValueError: If the rate is not a finite positive number.
+    """
+    if not np.isfinite(learning_rate) or learning_rate <= 0:
+        msg = f"'learning_rate' must be a finite positive number, got {learning_rate!r}"
+        raise ValueError(msg)
+    if learning_rate > _IMPLAUSIBLE_LEARNING_RATE:
+        warnings.warn(
+            f"'learning_rate' is {learning_rate!r}, above 1. Each step moves a model more than the "
+            "whole distance to the sample, so training will overshoot and oscillate rather than "
+            "converge. Kohonen (2013) Section 4.1 uses rates below 1.",
+            UserWarning,
+            stacklevel=3,
+        )
 
 
 class SOM:
@@ -90,11 +142,11 @@ class SOM:
         y: int | None,
         input_len: int,
         learning_rate: float = 0.5,
-        learning_rate_decay: Callable[[float, int, int], float] = asymptotic_decay,
+        learning_rate_decay: DecayFunction = asymptotic_decay,
         neighborhood_radius: float = 1.0,
-        neighborhood_radius_decay: Callable[[float, int, int], float] = asymptotic_decay,
-        neighborhood_function: str = "gaussian",
-        distance_function: Callable[[Any, Any], npt.NDArray[np.floating]] = euclidean_distance,
+        neighborhood_radius_decay: DecayFunction = asymptotic_decay,
+        neighborhood_function: Neighborhood | NeighborhoodStr = Neighborhood.GAUSSIAN,
+        distance_function: DistanceFunction = euclidean_distance,
         cyclic_x: bool = False,
         cyclic_y: bool = False,
         random_seed: int | None = None,
@@ -150,6 +202,7 @@ class SOM:
                 f"got {min_neighborhood_radius!r}"
             )
             raise ValueError(msg)
+        _validate_learning_rate(learning_rate)
 
         self._shape: tuple[int, int] = (int(x), int(y))
         self._input_len = int(input_len)
@@ -298,7 +351,7 @@ class SOM:
         self,
         data: DataLike,
         n_iteration: int | None = None,
-        mode: str = "random",
+        mode: TrainingMode | TrainingModeStr = TrainingMode.RANDOM,
         verbose: bool = False,
     ) -> float:
         """Train the map and return the resulting quantization error.
@@ -450,7 +503,11 @@ class SOM:
 
     # ------------------------------------------------------------------ initialization
 
-    def weight_initialization(self, mode: str = "random", **kwargs: Any) -> None:  # noqa: ANN401
+    def weight_initialization(
+        self,
+        mode: WeightInit | WeightInitStr = WeightInit.RANDOM,
+        **kwargs: Any,  # noqa: ANN401
+    ) -> None:
         """Initialize the models of the network.
 
         :param mode: One of ``'random'``, ``'linear'`` or ``'sample'``.
@@ -471,7 +528,7 @@ class SOM:
                     self._shape,
                     self._input_len,
                     self._rng,
-                    sample_mode=kwargs.pop("sample_mode", "standard_normal"),
+                    sample_mode=kwargs.pop("sample_mode", SampleMode.STANDARD_NORMAL),
                 )
             elif mode == "linear":
                 self._weights = linear_models(to_numpy(kwargs.pop("data")), self._shape)
