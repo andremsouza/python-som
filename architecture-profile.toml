@@ -4,7 +4,7 @@
 # around it (`_som.py`, `_convert.py`) holds state, validation, progress output, and the pandas
 # adapter. See docs/ and `src/python_som/_core/__init__.py` for the rule in prose.
 #
-# The rule that matters day to day — the core imports nothing but NumPy — is enforced in CI by
+# The rule that matters day to day (the core imports nothing but NumPy) is enforced in CI by
 # ruff's TID251 (see `[tool.ruff.lint.flake8-tidy-imports.banned-api]` in pyproject.toml) and by
 # tests/test_core_boundary.py. This file is not run in CI: the checker that reads it is a
 # proprietary local review aid, not redistributable, so it cannot be a required check on a public

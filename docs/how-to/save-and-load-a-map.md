@@ -74,7 +74,7 @@ python_som.SOM.load_npz("checkpoint.npz").train(data, n_iteration=100)
 ## The training report
 
 `som.last_report` describes the most recent `train()` call, and `None` before the first one. It is
-saved with the map, so a figure can be traced back to the run that produced it — the seed, the
+saved with the map, so a figure can be traced back to the run that produced it: the seed, the
 iteration count, the error, and the versions of this package and NumPy that computed it.
 
 `train()` still returns the quantization error, so nothing that used the return value changes.
@@ -100,39 +100,17 @@ python_som.SOM.load_npz("custom.npz", distance_function=cosine)  # works
 ```
 
 The same applies to a `functools.partial`: it has no name to record, so it is treated as custom.
-That is the correct outcome — resolving `partial(exponential_decay, factor=3.0)` by the wrapped
+That is the correct outcome. Resolving `partial(exponential_decay, factor=3.0)` by the wrapped
 function's name would silently restore a different decay from the one that trained the map.
 
 The names that *do* resolve are the keys of `NEIGHBORHOOD_FUNCTIONS`, `DECAY_FUNCTIONS` and
 `DISTANCE_FUNCTIONS`, each of which is simply the function's own name.
 
-## How safe is it to load a file from someone else
+## Is it safe to load a file from someone else
 
-Safer than a pickle, and the difference is categorical rather than a matter of degree — but not
-unconditionally safe, so here is exactly what is and is not guaranteed.
-
-**Cannot happen:**
-
-- **Code execution.** `allow_pickle=False` is passed explicitly, so a crafted object array is
-  refused by NumPy, not unpickled. The test suite builds a payload that really would create a file,
-  proves it executes when NumPy is *allowed* to unpickle it, then shows the loader refusing the same
-  file with nothing created.
-- **Loading an arbitrary function by name.** Names resolve only through the registries. Nothing from
-  the file is imported, evaluated, or looked up in a module.
-- **A partly-read file being treated as valid.** The member list, the metadata JSON, the format
-  version, the weight dimensions and the weight shape against the saved config are all checked
-  before a map is constructed. Every failure raises `ArtifactError`.
-
-**Can still happen:**
-
-- **Resource exhaustion.** An `.npz` is a zip, so a hostile file can be built to decompress to
-  something enormous. Nothing here caps that.
-
-So: treat an artifact from an untrusted source the way you would a JPEG from one — it cannot run
-code, but it can still be malformed or oversized. Do not treat it as you would a signed archive.
-
-If you need integrity as well, hash the file and record the digest alongside whatever references it;
-that is outside what this format tries to do.
+Safer than a pickle, and categorically so: an artifact cannot execute code. It can still be
+malformed or oversized. [Artifact safety](../explanation/artifact-safety.md) sets out exactly what is
+and is not guaranteed, and why the guarantee stops where it does.
 
 ## Version differences
 

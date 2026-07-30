@@ -1607,6 +1607,18 @@ wheels = [
 ]
 
 [[package]]
+name = "mkdocs-redirects"
+version = "1.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mkdocs" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f1/a8/6d44a6cf07e969c7420cb36ab287b0669da636a2044de38a7d2208d5a758/mkdocs_redirects-1.2.2.tar.gz", hash = "sha256:3094981b42ffab29313c2c1b8ac3969861109f58b2dd58c45fc81cd44bfa0095", size = 7162, upload-time = "2024-11-07T14:57:21.109Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c4/ec/38443b1f2a3821bbcb24e46cd8ba979154417794d54baf949fefde1c2146/mkdocs_redirects-1.2.2-py3-none-any.whl", hash = "sha256:7dbfa5647b79a3589da4401403d69494bd1f4ad03b9c15136720367e1f340ed5", size = 6142, upload-time = "2024-11-07T14:57:19.143Z" },
+]
+
+[[package]]
 name = "mkdocstrings"
 version = "1.0.6"
 source = { registry = "https://pypi.org/simple" }
@@ -2582,6 +2594,7 @@ dev = [
 ]
 docs = [
     { name = "mkdocs-material" },
+    { name = "mkdocs-redirects" },
     { name = "mkdocstrings-python" },
 ]
 examples = [
@@ -2600,6 +2613,7 @@ requires-dist = [
     { name = "hypothesis", marker = "extra == 'dev'", specifier = "==6.163.0" },
     { name = "matplotlib", marker = "extra == 'examples'", specifier = ">=3.8" },
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = "==9.7.7" },
+    { name = "mkdocs-redirects", marker = "extra == 'docs'", specifier = "==1.2.2" },
     { name = "mkdocstrings-python", marker = "extra == 'docs'", specifier = "==2.0.5" },
     { name = "mypy", marker = "extra == 'dev'", specifier = "==2.3.0" },
     { name = "numpy", specifier = ">=1.24" },
