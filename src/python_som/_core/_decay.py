@@ -12,11 +12,18 @@ half of the diameter of the grid, whereafter it is gradually reduced to a fracti
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:  # pragma: no cover
+    from ._protocols import DecayFunction
+
 __all__ = [
+    "DECAY_FUNCTIONS",
     "asymptotic_decay",
     "exponential_decay",
     "inverse_decay",
     "linear_decay",
+    "resolve_decay",
 ]
 
 
@@ -66,3 +73,35 @@ def inverse_decay(x: float, t: int, max_t: int) -> float:
     :return: Value of ``x`` after ``t`` iterations.
     """
     return (max_t / 100) * x / ((max_t / 100) + t)
+
+
+DECAY_FUNCTIONS: Final[dict[str, DecayFunction]] = {
+    "asymptotic_decay": asymptotic_decay,
+    "linear_decay": linear_decay,
+    "exponential_decay": exponential_decay,
+    "inverse_decay": inverse_decay,
+}
+"""Decay functions by name, so a saved map can name the one it used.
+
+Each key is the function's own name, which is the least surprising mapping and the one a reader can
+check against the source without a lookup table. These names are written into artifacts, so they are
+public API from 0.4.0 and fixed at 1.0.0.
+
+A decay function is not required to be in here: a caller may pass any callable. What a name buys is
+the ability to restore it from a file, and the loader says so explicitly when it cannot.
+"""
+
+
+def resolve_decay(name: str) -> DecayFunction:
+    """Look up a decay function by name.
+
+    :param name: Name of the decay function.
+    :return: The corresponding function.
+    :raises ValueError: If the name is not recognised.
+    """
+    try:
+        return DECAY_FUNCTIONS[name]
+    except KeyError as exc:
+        valid = sorted(DECAY_FUNCTIONS)
+        msg = f"Unknown decay function {name!r}. Value should be one of {valid}"
+        raise ValueError(msg) from exc

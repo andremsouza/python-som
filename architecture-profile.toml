@@ -11,12 +11,12 @@
 # MIT repository. The profile ships anyway, because the declared architecture is worth stating in
 # the repository rather than only in a plan, and because the local checker needs something to read.
 #
-# It reports 0 ERROR and 13 WARN today, and passes `--strict`. Both WARN kinds are expected, and are
-# written down here so a reviewer does not read them as regressions:
+# It reports 0 ERROR and 13 WARN today, and passes `--strict`. The provenance marker the preset asks
+# for arrived with `TrainingReport` and `save_npz`/`load_npz`, so that WARN is gone. The count is
+# unchanged at 13 only by coincidence: the strategy protocols added one function of their own to the
+# positional-argument list below, which is the single remaining WARN kind.
 #
-#   - No provenance marker. PR #10 adds `TrainingReport`, which is what the preset is asking for.
-#
-#   - Twelve functions take 4 or 5 positional args against a preset limit of 3, with the advice to
+#   - Thirteen functions take 4 or 5 positional args against a preset limit of 3, with the advice to
 #     "group into a dataclass". Not taken, and the limit is deliberately left at 3 rather than raised
 #     to make the warnings disappear. `gaussian(shape, center, sigma, cyclic)` is four independent
 #     inputs with no natural grouping; a `NeighborhoodParams` holding four fields for one call site

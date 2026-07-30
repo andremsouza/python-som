@@ -13,12 +13,23 @@ from __future__ import annotations
 
 import logging
 import secrets
+import time
 import warnings
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
 
+from ._artifact import (
+    ArtifactError,
+    SOMConfig,
+    TrainingReport,
+    config_from,
+    load_arrays,
+    metadata_json,
+    report_from,
+    resolve_strategies,
+)
 from ._convert import to_numpy
 from ._core._decay import asymptotic_decay
 from ._core._distance import euclidean_distance
@@ -42,21 +53,33 @@ from ._enums import (
     WeightInit,
     WeightInitStr,
 )
+from ._version import __version__
 
 if TYPE_CHECKING:  # pragma: no cover
+    import os
     from collections import Counter
     from collections.abc import Iterable
+    from types import ModuleType
 
     from ._convert import DataLike
     from ._core._neighborhood import NeighborhoodFunction
     from ._core._protocols import DecayFunction, DistanceFunction
 
+# tqdm is the `cli` extra, so it may legitimately be absent. Bound to None rather than left
+# undefined on the failure path: leaving the name unbound reads to a type checker as "possibly
+# unbound at every use site", however carefully the use is guarded. The annotation is needed because
+# mypy infers `Module` from the successful import and would then reject the None.
+_tqdm: ModuleType | None
 try:
-    import tqdm
+    import tqdm as _tqdm_module
 
-    TQDM_AVAILABLE = True
+    _tqdm = _tqdm_module
 except ImportError:  # pragma: no cover
-    TQDM_AVAILABLE = False
+    _tqdm = None
+
+#: Whether a progress bar can be shown. Derived from the import rather than set in both branches, so
+#: the flag cannot disagree with whether the module is actually there.
+TQDM_AVAILABLE = _tqdm is not None
 
 __all__ = ["SOM"]
 
@@ -83,6 +106,41 @@ _SEED_BITS = 128
 #: this is a plausibility threshold rather than a limit: Eq. (3) moves a model a fraction
 #: ``alpha * h`` of the way to the sample, and a fraction above 1 overshoots it.
 _IMPLAUSIBLE_LEARNING_RATE = 1.0
+
+
+def _name_of(function: object) -> str:
+    """Return the name a strategy is recorded under in an artifact.
+
+    ``__name__`` for a plain function, which is what the registries are keyed by. Anything without
+    one -- a ``functools.partial``, a callable object -- falls back to its type name, which still
+    records what was used even though it cannot be resolved back into a callable.
+
+    :param function: The strategy.
+    :return: A name for it.
+    """
+    return str(getattr(function, "__name__", type(function).__name__))
+
+
+def _warn_on_major_version_change(saved: str | None, path: object) -> None:
+    """Warn when an artifact was written by a different major version of this package.
+
+    Loading it is still allowed: refusing would make old artifacts unreadable, which is the opposite
+    of what provenance is for. But a major version is exactly where this package permits numerics to
+    change, so a map trained by one and reloaded under another may not reproduce the run it records.
+
+    :param saved: Version recorded in the artifact, if any.
+    :param path: File it came from, for the message.
+    """
+    if not saved:
+        return
+    if saved.split(".")[0] != __version__.split(".")[0]:
+        warnings.warn(
+            f"{path} was written by python-som {saved} and you are running {__version__}. "
+            "Major versions are where this package allows numerical results to change, so the "
+            "loaded map may not reproduce the run recorded in its report.",
+            UserWarning,
+            stacklevel=3,
+        )
 
 
 def _validate_learning_rate(learning_rate: float) -> None:
@@ -223,6 +281,10 @@ class SOM:
         )
         self._rng = np.random.default_rng(self._random_seed)
         self._weights = random_models(self._shape, self._input_len, self._rng)
+
+        #: Set by `train`. None until then, which is what distinguishes an untrained map from one
+        #: trained with zero effect.
+        self._last_report: TrainingReport | None = None
 
     # ------------------------------------------------------------------ accessors
 
@@ -395,14 +457,169 @@ class SOM:
 
         logger.info("Training with %d iterations in %r mode", n_iteration, mode)
 
+        started = time.perf_counter()
         if mode == "batch":
-            self._train_batch(array, n_iteration, verbose=verbose)
+            final_alpha, final_sigma = self._train_batch(array, n_iteration, verbose=verbose)
         else:
-            self._train_stepwise(array, n_iteration, mode=mode, verbose=verbose)
+            final_alpha, final_sigma = self._train_stepwise(
+                array, n_iteration, mode=mode, verbose=verbose
+            )
+        elapsed = time.perf_counter() - started
 
         error = self.quantization_error(array)
         logger.info("Quantization error: %g", error)
+
+        self._last_report = TrainingReport(
+            mode=str(mode),
+            n_iteration=n_iteration,
+            n_samples=len(array),
+            random_seed=self._random_seed,
+            final_learning_rate=final_alpha,
+            final_neighborhood_radius=final_sigma,
+            quantization_error=float(error),
+            python_som_version=__version__,
+            numpy_version=np.__version__,
+            wall_time_seconds=elapsed,
+        )
         return error
+
+    @property
+    def last_report(self) -> TrainingReport | None:
+        """What the most recent :meth:`train` call did, or None if it has not been called.
+
+        :return: The report for the last training run.
+        """
+        return self._last_report
+
+    # ------------------------------------------------------------------ artifacts
+
+    def config(self) -> SOMConfig:
+        """Describe this map in a form that can be written to a file.
+
+        Strategies appear by name. A callable that is not one of the package's registered functions
+        is recorded as its ``__name__``, which preserves the provenance but cannot be resolved back
+        into a callable; :meth:`load_npz` says so explicitly rather than guessing.
+
+        :return: The configuration.
+        """
+        return SOMConfig(
+            shape=self._shape,
+            input_len=self._input_len,
+            learning_rate=self._learning_rate,
+            neighborhood_radius=self._neighborhood_radius,
+            min_neighborhood_radius=self._min_neighborhood_radius,
+            cyclic=self._cyclic,
+            neighborhood_function=str(self._neighborhood_function_name),
+            learning_rate_decay=_name_of(self._learning_rate_decay),
+            neighborhood_radius_decay=_name_of(self._neighborhood_radius_decay),
+            distance_function=_name_of(self._distance_function),
+        )
+
+    def save_npz(self, path: str | os.PathLike[str]) -> None:
+        """Write the models and their provenance to a single ``.npz`` file.
+
+        The file holds the weights as an array and everything else as JSON beside them: the
+        configuration, the seed, the generator's current state, and the last training report. No
+        pickle is involved on either side, so the result is safe to load without executing code.
+
+        Saving the generator *state* as well as the seed is what lets :meth:`load_npz` resume the
+        same random stream. Re-seeding would restart it, and a resumed run would then silently
+        diverge from an uninterrupted one.
+
+        :param path: Destination file.
+        """
+        np.savez(
+            path,
+            weights=self._weights,
+            metadata=np.array(
+                metadata_json(
+                    self.config(),
+                    self._random_seed,
+                    self._rng.bit_generator.state,
+                    self._last_report,
+                    __version__,
+                )
+            ),
+        )
+        logger.info("Saved a %s map to %s", "x".join(map(str, self._shape)), path)
+
+    @classmethod
+    def load_npz(
+        cls,
+        path: str | os.PathLike[str],
+        *,
+        neighborhood_function: NeighborhoodFunction | None = None,
+        learning_rate_decay: DecayFunction | None = None,
+        neighborhood_radius_decay: DecayFunction | None = None,
+        distance_function: DistanceFunction | None = None,
+    ) -> SOM:
+        """Rebuild a map saved by :meth:`save_npz`, models, generator state and all.
+
+        Continuing to train a loaded map produces the same weights as never having stopped, which is
+        the only useful definition of "loaded" for a stochastic process and is what the saved
+        generator state is for.
+
+        The four keyword arguments exist for maps trained with a function this package cannot look
+        up by name. Passing one the file did not need is harmless: it takes precedence over the
+        registered function of the same role.
+
+        :param path: File to read.
+        :param neighborhood_function: Replacement for a neighborhood that cannot be resolved.
+        :param learning_rate_decay: Replacement for a learning-rate decay that cannot be resolved.
+        :param neighborhood_radius_decay: Replacement for a radius decay that cannot be resolved.
+        :param distance_function: Replacement for a distance that cannot be resolved.
+        :return: The reconstructed map.
+        :raises ArtifactError: If the file is not a readable artifact, or names a function that
+            cannot be resolved and was not supplied.
+        """
+        weights, metadata = load_arrays(path)
+        config = config_from(metadata, path)
+        strategies = resolve_strategies(
+            config,
+            {
+                "neighborhood_function": neighborhood_function,
+                "learning_rate_decay": learning_rate_decay,
+                "neighborhood_radius_decay": neighborhood_radius_decay,
+                "distance_function": distance_function,
+            },
+        )
+
+        if weights.shape != (*config.shape, config.input_len):
+            msg = (
+                f"{path} holds weights of shape {weights.shape}, which does not match the saved "
+                f"configuration {(*config.shape, config.input_len)}"
+            )
+            raise ArtifactError(msg)
+
+        rng = metadata.get("rng") or {}
+        som = cls(
+            x=config.shape[0],
+            y=config.shape[1],
+            input_len=config.input_len,
+            learning_rate=config.learning_rate,
+            neighborhood_radius=config.neighborhood_radius,
+            neighborhood_function=strategies.neighborhood_function,
+            cyclic_x=config.cyclic[0],
+            cyclic_y=config.cyclic[1],
+            random_seed=rng.get("seed"),
+            min_neighborhood_radius=config.min_neighborhood_radius,
+            learning_rate_decay=strategies.learning_rate_decay,
+            neighborhood_radius_decay=strategies.neighborhood_radius_decay,
+            distance_function=strategies.distance_function,
+        )
+        som._weights = weights
+        if rng.get("state") is not None:
+            # NumPy validates the state and raises ValueError on a malformed one ("state must be for
+            # a PCG64 RNG"). Translated, so that every way a bad file can fail reaches the caller as
+            # ArtifactError rather than as a message about bit generators from two libraries down.
+            try:
+                som._rng.bit_generator.state = rng["state"]
+            except (ValueError, TypeError, KeyError) as exc:
+                msg = f"{path} has an unusable random generator state: {exc}"
+                raise ArtifactError(msg) from exc
+        som._last_report = report_from(metadata)
+        _warn_on_major_version_change(metadata.get("python_som_version"), path)
+        return som
 
     def _sigma(self, t: int, n_iteration: int) -> float:
         """Return the neighborhood radius at iteration ``t``, floored.
@@ -423,13 +640,14 @@ class SOM:
         :param verbose: Whether progress was requested.
         :return: The iterable, wrapped or not.
         """
-        if verbose and TQDM_AVAILABLE:
-            return tqdm.tqdm(iterable, total=total, desc="Training")
+        if verbose and _tqdm is not None:
+            wrapped: Iterable[_T] = _tqdm.tqdm(iterable, total=total, desc="Training")
+            return wrapped
         return iterable
 
     def _train_stepwise(
         self, array: npt.NDArray[Any], n_iteration: int, *, mode: str, verbose: bool
-    ) -> None:
+    ) -> tuple[float | None, float]:
         """Train one sample at a time, updating the winner and its neighbourhood.
 
         Implements Eq. (3) of Kohonen (2013). ``'sequential'`` cycles through the dataset in order,
@@ -451,6 +669,8 @@ class SOM:
         else:
             indices = np.resize(np.arange(len(array)), n_iteration)
 
+        alpha = self._learning_rate
+        sigma = self._neighborhood_radius
         for t, index in enumerate(self._progress(indices, n_iteration, verbose=verbose)):
             alpha = self._learning_rate_decay(self._learning_rate, t, n_iteration)
             sigma = self._sigma(t, n_iteration)
@@ -459,8 +679,13 @@ class SOM:
             self._weights = stepwise_update(
                 self._weights, sample, self.neighborhood(winning, sigma), alpha
             )
+        # Returned rather than recomputed by the caller, so the report states what the loop actually
+        # used. Recomputing would also add a decay call, which the iteration-count tests measure.
+        return float(alpha), float(sigma)
 
-    def _train_batch(self, array: npt.NDArray[Any], n_iteration: int, *, verbose: bool) -> None:
+    def _train_batch(
+        self, array: npt.NDArray[Any], n_iteration: int, *, verbose: bool
+    ) -> tuple[float | None, float]:
         """Train with the batch algorithm, updating every model concurrently.
 
         Implements Eq. (8) of Kohonen (2013). The winner map is recomputed from the models as they
@@ -480,6 +705,7 @@ class SOM:
         :param verbose: Whether to show a progress bar.
         """
         build_kernel = resolve_kernel(self._neighborhood_function_name)
+        sigma = self._neighborhood_radius
         for t in self._progress(range(n_iteration), n_iteration, verbose=verbose):
             sigma = self._sigma(t, n_iteration)
             sums, counts = accumulate(array, self._weights, self._shape, self._distance_function)
@@ -500,6 +726,10 @@ class SOM:
                 return kernel_view(evaluated, self._shape, node)
 
             self._weights = batch_update(self._weights, sums, counts, neighborhood_of, self._shape)
+
+        # No learning rate: Eq. (8) is a weighted mean, so there is no step size to report. None
+        # rather than the unused initial value, which would read as though it had been applied.
+        return None, float(sigma)
 
     # ------------------------------------------------------------------ initialization
 

@@ -33,6 +33,7 @@ nav:
   - Neighborhood functions: neighborhood-functions.md
   - Training modes: training-modes.md
   - Options and types: options-and-types.md
+  - Saving and loading: save-and-load.md
   - API reference: api.md
   - Changelog: changelog.md
 
