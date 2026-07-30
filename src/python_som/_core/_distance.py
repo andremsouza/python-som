@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Final
+
 import numpy as np
 import numpy.typing as npt
 
-__all__ = ["euclidean_distance"]
+if TYPE_CHECKING:  # pragma: no cover
+    from ._protocols import DistanceFunction
+
+__all__ = ["DISTANCE_FUNCTIONS", "euclidean_distance", "resolve_distance"]
 
 
 def euclidean_distance(a: npt.ArrayLike, b: npt.ArrayLike) -> npt.NDArray[np.floating]:
@@ -24,3 +29,29 @@ def euclidean_distance(a: npt.ArrayLike, b: npt.ArrayLike) -> npt.NDArray[np.flo
     """
     result: npt.NDArray[np.floating] = np.linalg.norm(np.subtract(a, b), ord=2, axis=-1)
     return result
+
+
+DISTANCE_FUNCTIONS: Final[dict[str, DistanceFunction]] = {
+    "euclidean_distance": euclidean_distance,
+}
+"""Distance functions by name, so a saved map can name the one it used.
+
+One entry, because one is what the package ships. The registry exists for the same reason
+:data:`DECAY_FUNCTIONS` does -- a name is what makes a map reloadable -- and a dictionary with one
+key is the honest shape for that rather than a special case in the loader.
+"""
+
+
+def resolve_distance(name: str) -> DistanceFunction:
+    """Look up a distance function by name.
+
+    :param name: Name of the distance function.
+    :return: The corresponding function.
+    :raises ValueError: If the name is not recognised.
+    """
+    try:
+        return DISTANCE_FUNCTIONS[name]
+    except KeyError as exc:
+        valid = sorted(DISTANCE_FUNCTIONS)
+        msg = f"Unknown distance function {name!r}. Value should be one of {valid}"
+        raise ValueError(msg) from exc

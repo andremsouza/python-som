@@ -43,3 +43,12 @@
 ## Strategy protocols
 
 ::: python_som._core._protocols
+
+## Artifacts
+
+::: python_som._artifact
+    options:
+      members:
+        - SOMConfig
+        - TrainingReport
+        - ArtifactError

@@ -9,6 +9,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`save_npz` and `load_npz`**, so a trained map can be kept without reaching for `pickle`. One
+  `.npz` holds the models plus a JSON block with the configuration, the seed, the generator state
+  and
+  the last training report. No pickle on either side, so loading one cannot execute code.
+
+  A reloaded map **continues the same random stream**, so training it further gives what never
+  stopping would have given. Both the seed and the generator's current state are saved: the seed
+  alone
+  would restart the stream and a resumed run would quietly diverge from an uninterrupted one.
+
+  Strategies are saved by name and resolved through registries. A map built from the shipped
+  functions
+  round-trips completely; one built with your own function records the name for provenance and
+  raises
+  `ArtifactError` on load, naming the argument to pass it back through. A `functools.partial` is
+  treated as custom, so `partial(exponential_decay, factor=3.0)` cannot silently reload as
+  `factor=2.0`.
+
+  On safety: `allow_pickle=False` is passed explicitly, names resolve only through the registries,
+  and
+  the member list, JSON, format version and weight shape are all validated before a map is built.
+  What
+  that buys is "cannot execute code", not "safe to load anything" — an `.npz` is a zip, so a hostile
+  file can still attempt resource exhaustion. `docs/save-and-load.md` states both halves.
+
+- **`SOM.last_report`**, a frozen `TrainingReport`: mode, iterations, sample count, seed, the final
+  learning rate and radius, quantization error, the `python_som` and NumPy versions, and wall time.
+  `train()` still returns the quantization error, so nothing that used the return value changes.
+  `final_learning_rate` is `None` for batch training, which has no step size — Eq. (8) is a weighted
+  mean, and reporting the unused initial value would read as though it had been applied.
+
+- **`SOMConfig`**, the serialisable description of a map, available as `som.config()`.
+
+- **`DECAY_FUNCTIONS` and `DISTANCE_FUNCTIONS`** registries with `resolve_decay` and
+  `resolve_distance`, mirroring `NEIGHBORHOOD_FUNCTIONS`. These names are written into artifacts, so
+  they are public API from 0.4.0.
+
+- An `analysis` extra with pinned `bandit`, `pip-audit` and `pylint`, for the deeper review passes.
+  Not wired into any gate; ruff and mypy remain the enforced checks. CI names the extras it needs
+  rather than using `--all-extras`, so these are not installed on every matrix entry.
+
 - **Enums for every string-valued option**: `TrainingMode`, `Neighborhood`, `WeightInit` and
   `SampleMode`. Each member *is* a `str`, so `TrainingMode.BATCH` and `"batch"` are
   interchangeable: equal, same hash, same JSON, usable as the same dictionary key. Nothing that

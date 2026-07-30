@@ -21,6 +21,7 @@ ISSN 0893-6080, https://doi.org/10.1016/j.neunet.2012.09.018
 
 from __future__ import annotations
 
+from ._artifact import ArtifactError, SOMConfig, TrainingReport
 from ._core._decay import (
     asymptotic_decay,
     exponential_decay,
@@ -53,20 +54,27 @@ from ._enums import (
 )
 from ._som import SOM
 
+# `as` rather than a plain import: the explicit re-export idiom, which tells a type checker
+# this is public without putting a dunder into __all__, where the public API lives.
+from ._version import __version__ as __version__
+
 __all__ = [
     "NEIGHBORHOOD_FUNCTIONS",
     "SIGNED_NEIGHBORHOODS",
     "SOM",
+    "ArtifactError",
     "DecayFunction",
     "DistanceFunction",
     "KernelFunction",
     "Neighborhood",
     "NeighborhoodFunction",
     "NeighborhoodStr",
+    "SOMConfig",
     "SampleMode",
     "SampleModeStr",
     "TrainingMode",
     "TrainingModeStr",
+    "TrainingReport",
     "WeightInit",
     "WeightInitStr",
     "asymptotic_decay",
@@ -79,7 +87,6 @@ __all__ = [
     "mexican_hat",
 ]
 
-__version__ = "0.3.0"
 
 # Backwards-compatible aliases. Before 0.3.0 these functions lived in the top-level module under
 # underscore-prefixed names; they were private by convention but reachable, and the README listed

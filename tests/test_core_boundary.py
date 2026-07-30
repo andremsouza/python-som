@@ -235,11 +235,14 @@ def test_nothing_that_0_3_0_exported_has_been_removed() -> None:
 def test_the_public_surface_is_exactly_this() -> None:
     """Pin the whole surface, so growing it is a decision rather than an accident.
 
-    0.4.0 adds the enums, their ``Literal`` counterparts, and the strategy protocols. All are
-    additive: every existing call keeps working, and the enum members are ``str`` subclasses that
-    compare equal to the strings they replace.
+    0.4.0 adds the enums and their ``Literal`` counterparts, the strategy protocols, and the
+    artifact types. All are additive: every existing call keeps working, and the enum members are
+    ``str`` subclasses that compare equal to the strings they replace. ``__version__`` is
+    deliberately absent -- it is re-exported with the ``as`` idiom, since ``__all__`` is the public
+    API and a dunder is not part of it.
     """
     assert sorted(python_som.__all__) == [
+        "ArtifactError",
         "DecayFunction",
         "DistanceFunction",
         "KernelFunction",
@@ -249,10 +252,12 @@ def test_the_public_surface_is_exactly_this() -> None:
         "NeighborhoodStr",
         "SIGNED_NEIGHBORHOODS",
         "SOM",
+        "SOMConfig",
         "SampleMode",
         "SampleModeStr",
         "TrainingMode",
         "TrainingModeStr",
+        "TrainingReport",
         "WeightInit",
         "WeightInitStr",
         "asymptotic_decay",
@@ -266,16 +271,9 @@ def test_the_public_surface_is_exactly_this() -> None:
     ]
 
 
-def test_som_public_methods_are_exactly_what_0_3_0_shipped() -> None:
-    """Sixteen methods, named as they were before the split."""
-    import inspect  # noqa: PLC0415
-
-    public = sorted(
-        name
-        for name, _ in inspect.getmembers(python_som.SOM, inspect.isfunction)
-        if not name.startswith("_")
-    )
-    assert public == [
+#: Every public method 0.3.0 shipped. None may disappear before 1.0.0.
+_METHODS_IN_0_3_0 = frozenset(
+    {
         "activate",
         "activation_matrix",
         "distance_matrix",
@@ -286,6 +284,65 @@ def test_som_public_methods_are_exactly_what_0_3_0_shipped() -> None:
         "neighborhood",
         "quantization",
         "quantization_error",
+        "set_learning_rate",
+        "set_neighborhood_radius",
+        "train",
+        "weight_initialization",
+        "winner",
+        "winner_map",
+    }
+)
+
+
+def _public_methods() -> list[str]:
+    """Return SOM's public method names, classmethods included.
+
+    The predicate is ``isfunction or ismethod`` rather than ``isfunction`` alone. A classmethod
+    accessed through the class is a *bound method*, so ``isfunction`` is False for it -- which meant
+    an earlier version of this check silently ignored ``load_npz`` and would have ignored any
+    classmethod added later. A surface pin with a hole in it is worse than none.
+
+    :return: Sorted names, excluding anything underscore-prefixed.
+    """
+    import inspect  # noqa: PLC0415
+
+    return sorted(
+        name
+        for name, member in inspect.getmembers(python_som.SOM)
+        if not name.startswith("_") and (inspect.isfunction(member) or inspect.ismethod(member))
+    )
+
+
+def test_no_public_method_that_0_3_0_shipped_has_been_removed() -> None:
+    """The compatibility promise for methods, as a subset check.
+
+    Adding a method is not a breaking change and does not belong in the same assertion as removing
+    one, which is.
+    """
+    missing = _METHODS_IN_0_3_0 - set(_public_methods())
+    assert not missing, f"0.3.0 had these methods and they are gone: {sorted(missing)}"
+
+
+def test_the_public_methods_are_exactly_these() -> None:
+    """Pin the whole set, so growing it is deliberate.
+
+    0.4.0 adds ``config``, ``save_npz`` and ``load_npz``. ``last_report`` is a property rather than
+    a method, so it does not appear here; ``tests/test_artifacts.py`` covers it.
+    """
+    assert _public_methods() == [
+        "activate",
+        "activation_matrix",
+        "config",
+        "distance_matrix",
+        "get_random_seed",
+        "get_shape",
+        "get_weights",
+        "label_map",
+        "load_npz",
+        "neighborhood",
+        "quantization",
+        "quantization_error",
+        "save_npz",
         "set_learning_rate",
         "set_neighborhood_radius",
         "train",
