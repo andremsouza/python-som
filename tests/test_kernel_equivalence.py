@@ -23,6 +23,7 @@ import numpy as np
 import pytest
 
 import python_som
+from python_som import Neighborhood
 from python_som._core._match import accumulate
 from python_som._core._neighborhood import (
     NEIGHBORHOOD_FUNCTIONS,
@@ -41,7 +42,6 @@ if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Callable
 
     from python_som._core._neighborhood import NeighborhoodFunction
-    from python_som._enums import NeighborhoodStr
 
 #: Grid shapes to sweep, including degenerate single-row and single-column maps, where the offset
 #: span collapses and an off-by-one in the slice would be invisible on a square grid.
@@ -242,10 +242,10 @@ def test_resolve_kernel_rejects_an_unknown_name() -> None:
 # ---------------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("neighborhood", ["gaussian", "bubble"])
+@pytest.mark.parametrize("neighborhood", [Neighborhood.GAUSSIAN, Neighborhood.BUBBLE])
 @pytest.mark.parametrize("cyclic", [(False, False), (True, True), (True, False)])
 def test_batch_training_is_unchanged_by_the_kernel(
-    neighborhood: NeighborhoodStr, cyclic: tuple[bool, bool]
+    neighborhood: Neighborhood, cyclic: tuple[bool, bool]
 ) -> None:
     """Many iterations, with a decaying radius, against the per-node path it replaced.
 
@@ -298,11 +298,11 @@ def test_batch_training_is_unchanged_by_the_kernel(
             sums, counts = accumulate(data, current, shape, som._distance_function)
             neighborhood_of: Callable[[tuple[int, int]], np.ndarray]
             if use_kernel:
-                kernel = resolve_kernel(neighborhood)(shape, sigma, cyclic)
+                kernel = resolve_kernel(neighborhood.value)(shape, sigma, cyclic)
                 neighborhood_of = functools.partial(kernel_view, kernel, shape)
             else:
                 neighborhood_of = functools.partial(
-                    _evaluate_per_node, FUNCTIONS[neighborhood], shape, sigma, cyclic
+                    _evaluate_per_node, FUNCTIONS[neighborhood.value], shape, sigma, cyclic
                 )
             current = batch_update(current, sums, counts, neighborhood_of, shape)
         return current

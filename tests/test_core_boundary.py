@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 import python_som
+from python_som import WeightInit
 from python_som._core import _update
 from python_som._core._neighborhood import gaussian
 from tests.conftest import MODEL_SEED, make_som
@@ -363,22 +364,22 @@ def test_missing_data_argument_names_the_argument() -> None:
     That leaked a private method name and did not say what the caller should do.
     """
     som = make_som(x=4, y=4)
-    for mode in ("linear", "sample"):
-        with pytest.raises(ValueError, match=f"{mode!r} initialization requires"):
+    for mode in (WeightInit.LINEAR, WeightInit.SAMPLE):
+        with pytest.raises(ValueError, match=f"{mode.value!r} initialization requires"):
             som.weight_initialization(mode=mode)
 
 
 def test_unexpected_argument_names_the_argument() -> None:
     som = make_som(x=4, y=4)
     with pytest.raises(ValueError, match="Unexpected argument"):
-        som.weight_initialization(mode="random", data=np.zeros((4, 2)))
+        som.weight_initialization(mode=WeightInit.RANDOM, data=np.zeros((4, 2)))
 
 
 @pytest.mark.parametrize(
     ("kwargs", "expected"),
     [
-        ({"mode": "linear"}, "initialization requires"),
-        ({"mode": "random", "nonsense": 1}, "Unexpected argument"),
+        ({"mode": WeightInit.LINEAR}, "initialization requires"),
+        ({"mode": WeightInit.RANDOM, "nonsense": 1}, "Unexpected argument"),
         ({"mode": "spectral"}, "Invalid value for 'mode' parameter"),
     ],
     ids=["missing-data", "unexpected-kwarg", "unknown-mode"],

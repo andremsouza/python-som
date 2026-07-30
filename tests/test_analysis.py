@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from python_som import euclidean_distance
+from python_som import TrainingMode, WeightInit, euclidean_distance
 from tests.conftest import make_som
 
 
@@ -36,7 +36,7 @@ def test_quantization_error_is_zero_for_an_exact_fit() -> None:
     """A map whose models are exactly the data has no quantization error."""
     data = np.arange(12, dtype=float).reshape(4, 3)
     som = make_som(x=2, y=2, input_len=3)
-    som.weight_initialization(mode="sample", data=data)
+    som.weight_initialization(mode=WeightInit.SAMPLE, data=data)
     som._weights = data.reshape(2, 2, 3).copy()
     assert som.quantization_error(data) == pytest.approx(0.0)
 
@@ -71,8 +71,8 @@ def test_label_map_separates_well_separated_clusters(
 ) -> None:
     """After training on three distant blobs, most nodes should be label-pure."""
     som = make_som(x=8, y=8, neighborhood_radius=2.0)
-    som.weight_initialization(mode="linear", data=blobs)
-    som.train(blobs, n_iteration=40, mode="batch")
+    som.weight_initialization(mode=WeightInit.LINEAR, data=blobs)
+    som.train(blobs, n_iteration=40, mode=TrainingMode.BATCH)
     label_map = som.label_map(blobs, blob_labels)
     occupied = [c for c in label_map.values() if sum(c.values()) > 0]
     pure = [c for c in occupied if len(c) == 1]

@@ -19,8 +19,8 @@ som.weight_initialization(mode="linear", data=data)
 som.train(data, n_iteration=100, mode="batch")
 ```
 
-Each enum member **is** a `str`, so `TrainingMode.BATCH == "batch"` is `True`, it hashes the same, it
-serialises to `"batch"` in JSON, and it works as a dictionary key. Nothing that accepted a string
+Each enum member **is** a `str`, so `TrainingMode.BATCH == "batch"` is `True`, it hashes the same,
+it serialises to `"batch"` in JSON, and it works as a dictionary key. Nothing that accepted a string
 before stops accepting one.
 
 ## Why bother
@@ -62,19 +62,35 @@ one canonical spelling per option is most of the point of having an enum.
 
 ## Deprecation timetable for plain strings
 
-Strings are deprecated as of **0.4.0**, and nothing warns yet.
-
 | Version | What happens |
 | --- | --- |
-| **0.4.0** | Enums added. Strings accepted, no warning. |
-| **0.5.0** | Strings emit `DeprecationWarning`. |
-| **1.0.0** | Strings removed; the enums become the only accepted form. |
+| 0.4.0 | Enums added. Strings accepted, no warning. |
+| **0.5.0 (current)** | Strings emit `DeprecationWarning`. |
+| 1.0.0 | Strings removed; the enums become the only accepted form. |
 
-No warning in 0.4.0 is deliberate. `mode="batch"` is what this documentation showed until this page
-existed, so a minor release that warned on it would be scolding people for following its own
-instructions. The written notice comes first and the warning follows in 0.5.0, which also means
-0.5.0 has to ship before 1.0.0 can remove anything: the policy is that a removal in a major release
-is preceded by at least one minor release that warns.
+0.4.0 deliberately warned about nothing, because `mode="batch"` was what this documentation showed
+until that release. The written notice came first, and this is the warning that follows it.
+
+The warning names the exact replacement, so migrating is a substitution you read off the message:
+
+```
+DeprecationWarning: Passing mode='batch' as a plain string is deprecated and will
+stop working in 1.0.0. Use TrainingMode.BATCH instead.
+```
+
+Two things it deliberately does not do. It does not fire for a spelling that was never valid, so
+`mode="stochastic"` still raises its `ValueError` rather than burying the real mistake under a
+notice about modernising something that never worked. And it does not fire when a map is loaded
+from an artifact: the name in a `.npz` is a serialisation detail, since JSON has no enums, so the
+loader converts it rather than warning you about a string you never wrote.
+
+To silence it while you migrate:
+
+```python
+import warnings
+
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="python_som")
+```
 
 Migrating early costs nothing and is a mechanical substitution: `"batch"` becomes
 `TrainingMode.BATCH`, and so on down the table above.

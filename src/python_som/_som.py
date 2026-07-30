@@ -52,6 +52,7 @@ from ._enums import (
     TrainingModeStr,
     WeightInit,
     WeightInitStr,
+    warn_if_string,
 )
 from ._version import __version__
 
@@ -271,6 +272,7 @@ class SOM:
         self._min_neighborhood_radius = float(min_neighborhood_radius)
         self._neighborhood_function_name = neighborhood_function
         self._neighborhood_function: NeighborhoodFunction = resolve(neighborhood_function)
+        warn_if_string(neighborhood_function, Neighborhood, "neighborhood_function")
         self._distance_function = distance_function
         self._cyclic = (bool(cyclic_x), bool(cyclic_y))
 
@@ -436,13 +438,15 @@ class SOM:
             raise ValueError(msg)
         if mode not in TRAINING_MODES:
             msg = (
-                f"Invalid value for 'mode' parameter: {mode!r}. "
+                f"Invalid value for 'mode' parameter: {str(mode)!r}. "
                 f"Value should be one of {list(TRAINING_MODES)}"
             )
             raise ValueError(msg)
+        warn_if_string(mode, TrainingMode, "mode")
         if mode == "batch" and self._neighborhood_function_name in SIGNED_NEIGHBORHOODS:
             msg = (
-                f"The {self._neighborhood_function_name!r} neighborhood function cannot be used "
+                f"The {str(self._neighborhood_function_name)!r} neighborhood function cannot be "
+                "used "
                 "with the 'batch' training mode: the weighted mean of Kohonen (2013), Eq. (8), is "
                 "undefined for a neighborhood function that takes negative values, as its "
                 "denominator is not sign-definite. Use mode='random' or mode='sequential'."
@@ -748,10 +752,13 @@ class SOM:
         """
         if mode not in INITIALIZATION_MODES:
             msg = (
-                f"Invalid value for 'mode' parameter: {mode!r}. "
+                f"Invalid value for 'mode' parameter: {str(mode)!r}. "
                 f"Value should be one of {list(INITIALIZATION_MODES)}"
             )
             raise ValueError(msg)
+        warn_if_string(mode, WeightInit, "mode")
+        if "sample_mode" in kwargs:
+            warn_if_string(kwargs["sample_mode"], SampleMode, "sample_mode")
         try:
             if mode == "random":
                 self._weights = random_models(
@@ -766,11 +773,11 @@ class SOM:
                 self._weights = sample_models(to_numpy(kwargs.pop("data")), self._shape, self._rng)
         except KeyError as exc:
             # Without this the caller sees a bare KeyError naming the missing key and nothing else.
-            msg = f"{mode!r} initialization requires a {exc} argument"
+            msg = f"{str(mode)!r} initialization requires a {exc} argument"
             raise ValueError(msg) from exc
         if kwargs:
             msg = (
-                f"Unexpected argument(s) for {mode!r} initialization: {sorted(kwargs)}. "
+                f"Unexpected argument(s) for {str(mode)!r} initialization: {sorted(kwargs)}. "
                 f"Valid modes are {list(INITIALIZATION_MODES)}."
             )
             raise ValueError(msg)

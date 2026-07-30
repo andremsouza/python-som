@@ -7,15 +7,11 @@ iteration count is honoured, that a training step cannot divide by a vanishing d
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import numpy as np
 import pytest
 
-if TYPE_CHECKING:  # pragma: no cover
-    from python_som._enums import TrainingModeStr
-
 import python_som
+from python_som import Neighborhood, TrainingMode, WeightInit
 from tests.conftest import SEED, make_som
 
 
@@ -28,10 +24,10 @@ def test_batch_never_zeroes_a_model(rng: np.random.Generator) -> None:
     """
     data = rng.normal(size=(20, 3))
     som = make_som(x=30, y=30, neighborhood_radius=0.5)
-    som.weight_initialization(mode="sample", data=data)
+    som.weight_initialization(mode=WeightInit.SAMPLE, data=data)
     before = som.get_weights().copy()
 
-    som.train(data, n_iteration=1, mode="batch")
+    som.train(data, n_iteration=1, mode=TrainingMode.BATCH)
     after = som.get_weights()
 
     zeroed = np.all(after == 0.0, axis=-1)
@@ -43,12 +39,12 @@ def test_batch_never_zeroes_a_model(rng: np.random.Generator) -> None:
 
 def test_batch_preserves_finiteness(blobs: np.ndarray) -> None:
     som = make_som(x=10, y=10, neighborhood_radius=2.0)
-    som.train(blobs, n_iteration=5, mode="batch")
+    som.train(blobs, n_iteration=5, mode=TrainingMode.BATCH)
     assert np.isfinite(som.get_weights()).all()
 
 
-@pytest.mark.parametrize("mode", ["random", "sequential", "batch"])
-def test_training_reduces_quantization_error(mode: TrainingModeStr, blobs: np.ndarray) -> None:
+@pytest.mark.parametrize("mode", list(TrainingMode))
+def test_training_reduces_quantization_error(mode: TrainingMode, blobs: np.ndarray) -> None:
     """Training should fit the data better than the initial state."""
     som = make_som(x=8, y=8, neighborhood_radius=2.0, learning_rate=0.5)
     before = som.quantization_error(blobs)
@@ -56,9 +52,9 @@ def test_training_reduces_quantization_error(mode: TrainingModeStr, blobs: np.nd
     assert after < before
 
 
-@pytest.mark.parametrize("mode", ["random", "sequential"])
+@pytest.mark.parametrize("mode", [TrainingMode.RANDOM, TrainingMode.SEQUENTIAL])
 def test_stepwise_runs_the_requested_number_of_iterations(
-    mode: TrainingModeStr, blobs: np.ndarray, monkeypatch: pytest.MonkeyPatch
+    mode: TrainingMode, blobs: np.ndarray, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Regression: sequential mode used to run ``len(data)`` steps regardless of ``n_iteration``.
 
@@ -85,7 +81,7 @@ def test_stepwise_runs_the_requested_number_of_iterations(
 def test_sequential_cycles_through_the_dataset(blobs: np.ndarray) -> None:
     """More iterations than samples must wrap around rather than stop early."""
     som = make_som(x=5, y=5)
-    som.train(blobs, n_iteration=len(blobs) * 3, mode="sequential")
+    som.train(blobs, n_iteration=len(blobs) * 3, mode=TrainingMode.SEQUENTIAL)
     assert np.isfinite(som.get_weights()).all()
 
 
@@ -112,7 +108,7 @@ def test_random_samples_with_replacement(
         return original(x)
 
     monkeypatch.setattr(som, "winner", recording_winner)
-    som.train(blobs, n_iteration=len(blobs), mode="random")
+    som.train(blobs, n_iteration=len(blobs), mode=TrainingMode.RANDOM)
     drawn = seen[: len(blobs)]
     assert len(drawn) == len(blobs)
     assert len(set(drawn)) < len(blobs), "a with-replacement draw should repeat an index"
@@ -131,7 +127,7 @@ def test_sequential_visits_every_sample_exactly_once_per_epoch(
         return original(x)
 
     monkeypatch.setattr(som, "winner", recording_winner)
-    som.train(blobs, n_iteration=len(blobs), mode="sequential")
+    som.train(blobs, n_iteration=len(blobs), mode=TrainingMode.SEQUENTIAL)
     assert seen[: len(blobs)] == list(range(len(blobs)))
 
 
@@ -140,28 +136,30 @@ def test_batch_rejects_a_signed_neighborhood(blobs: np.ndarray) -> None:
 
     Measured on a 12x12 grid, 49 of 144 denominators come out negative.
     """
-    som = make_som(x=12, y=12, neighborhood_function="mexicanhat")
+    som = make_som(x=12, y=12, neighborhood_function=Neighborhood.MEXICAN_HAT)
     with pytest.raises(ValueError, match="batch"):
-        som.train(blobs, n_iteration=1, mode="batch")
+        som.train(blobs, n_iteration=1, mode=TrainingMode.BATCH)
 
 
 def test_batch_rejects_the_alias_too(blobs: np.ndarray) -> None:
-    som = make_som(x=12, y=12, neighborhood_function="mexican_hat")
+    som = make_som(x=12, y=12, neighborhood_function=Neighborhood.MEXICAN_HAT)
     with pytest.raises(ValueError, match="batch"):
-        som.train(blobs, n_iteration=1, mode="batch")
+        som.train(blobs, n_iteration=1, mode=TrainingMode.BATCH)
 
 
-@pytest.mark.parametrize("mode", ["random", "sequential"])
-def test_stepwise_accepts_a_signed_neighborhood(mode: TrainingModeStr, blobs: np.ndarray) -> None:
+@pytest.mark.parametrize("mode", [TrainingMode.RANDOM, TrainingMode.SEQUENTIAL])
+def test_stepwise_accepts_a_signed_neighborhood(mode: TrainingMode, blobs: np.ndarray) -> None:
     """The mexican hat is fine for stepwise training; only the batch mean is undefined."""
-    som = make_som(x=12, y=12, neighborhood_function="mexicanhat")
+    som = make_som(x=12, y=12, neighborhood_function=Neighborhood.MEXICAN_HAT)
     som.train(blobs, n_iteration=30, mode=mode)
     assert np.isfinite(som.get_weights()).all()
 
 
-@pytest.mark.parametrize(("mode", "per_sample"), [("batch", 10), ("sequential", 1000)])
+@pytest.mark.parametrize(
+    ("mode", "per_sample"), [(TrainingMode.BATCH, 10), (TrainingMode.SEQUENTIAL, 1000)]
+)
 def test_omitting_n_iteration_uses_the_documented_default(
-    mode: TrainingModeStr, per_sample: int, monkeypatch: pytest.MonkeyPatch
+    mode: TrainingMode, per_sample: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The default is 1000 iterations per sample for stepwise modes and 10 for batch.
 
@@ -189,7 +187,7 @@ def test_verbose_training_runs_with_a_progress_bar(blobs: np.ndarray) -> None:
     tqdm ships in the dev extra, so this exercises the wrapped path rather than the fallback.
     """
     som = make_som(x=5, y=5)
-    error = som.train(blobs, n_iteration=3, mode="batch", verbose=True)
+    error = som.train(blobs, n_iteration=3, mode=TrainingMode.BATCH, verbose=True)
     assert np.isfinite(error)
 
 
@@ -215,16 +213,16 @@ def test_non_positive_iteration_count_raises_value_error(blobs: np.ndarray) -> N
 def test_same_seed_reproduces_the_same_map(blobs: np.ndarray) -> None:
     a = make_som(x=8, y=8, random_seed=SEED)
     b = make_som(x=8, y=8, random_seed=SEED)
-    a.train(blobs, n_iteration=25, mode="random")
-    b.train(blobs, n_iteration=25, mode="random")
+    a.train(blobs, n_iteration=25, mode=TrainingMode.RANDOM)
+    b.train(blobs, n_iteration=25, mode=TrainingMode.RANDOM)
     np.testing.assert_array_equal(a.get_weights(), b.get_weights())
 
 
 def test_different_seeds_give_different_maps(blobs: np.ndarray) -> None:
     a = make_som(x=8, y=8, random_seed=1)
     b = make_som(x=8, y=8, random_seed=2)
-    a.train(blobs, n_iteration=25, mode="random")
-    b.train(blobs, n_iteration=25, mode="random")
+    a.train(blobs, n_iteration=25, mode=TrainingMode.RANDOM)
+    b.train(blobs, n_iteration=25, mode=TrainingMode.RANDOM)
     assert not np.allclose(a.get_weights(), b.get_weights())
 
 
@@ -258,7 +256,7 @@ def test_radius_is_floored_during_training(blobs: np.ndarray) -> None:
         neighborhood_radius_decay=python_som.linear_decay,
         min_neighborhood_radius=0.5,
     )
-    som.train(blobs, n_iteration=10, mode="random")
+    som.train(blobs, n_iteration=10, mode=TrainingMode.RANDOM)
     assert np.isfinite(som.get_weights()).all()
 
 
@@ -278,7 +276,7 @@ def test_winner_is_always_inside_the_grid(blobs: np.ndarray) -> None:
 def test_batch_matches_a_reference_implementation(blobs: np.ndarray) -> None:
     """The contracted batch update must agree with the literal double loop of Eq. (8)."""
     som = make_som(x=6, y=5, neighborhood_radius=1.5)
-    som.weight_initialization(mode="sample", data=blobs)
+    som.weight_initialization(mode=WeightInit.SAMPLE, data=blobs)
     reference = som.get_weights().copy()
 
     sigma = som._sigma(0, 1)
@@ -294,5 +292,5 @@ def test_batch_matches_a_reference_implementation(blobs: np.ndarray) -> None:
         if abs(bottom) > 1e-12:
             expected[i] = upper / bottom
 
-    som.train(blobs, n_iteration=1, mode="batch")
+    som.train(blobs, n_iteration=1, mode=TrainingMode.BATCH)
     np.testing.assert_allclose(som.get_weights(), expected, atol=1e-12)
