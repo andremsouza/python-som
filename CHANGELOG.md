@@ -5,11 +5,29 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-07-30
+
+### Fixed
+
+- **The package description on PyPI now describes the current package.** It had not been updated
+  since 0.3.0, so it listed none of the features added in 0.4.0, 0.5.0 or 0.6.0: not the drop to
+  NumPy as the only dependency, not `save_npz`/`load_npz`, not the training reports, and not the
+  scikit-learn estimator interface that 0.6.0 exists to add.
+
+  A PyPI description cannot be edited after upload, so correcting it takes a release. That is the
+  whole of this one: no code changed, and results are identical to 0.6.0.
+
+  The upgrade notes were also short of two things worth knowing. 0.4.0 changes
+  linear-initialization results for data far from the origin, where the previous PCA path was wrong
+  by up to 5.8%, and it removed pandas and scikit-learn as runtime dependencies, which matters to
+  anyone who was importing either transitively. Both are now in the README, alongside a note that 0.5.0's
+  string deprecation was withdrawn so anyone who saw the warning knows to stop migrating.
+
 ## [0.6.0] - 2026-07-30
 
 A map can now be used as a scikit-learn estimator, and the plain-string deprecation from 0.5.0 is
-withdrawn. Nothing breaks and no numerical results change: `train` is untouched, both option spellings
-work, and scikit-learn remains optional.
+withdrawn. Nothing breaks and no numerical results change: `train` is untouched, both option
+spellings work, and scikit-learn remains optional.
 
 ### Added
 
