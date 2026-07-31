@@ -45,6 +45,7 @@ nav:
       - Why isotropy matters: explanation/why-isotropy-matters.md
       - Batch vs stepwise: explanation/batch-vs-stepwise.md
       - Artifact safety: explanation/artifact-safety.md
+      - Comparison with MiniSom and SOMPY: explanation/comparison-with-som-libraries.md
 
 plugins:
   - search

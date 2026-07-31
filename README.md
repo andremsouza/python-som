@@ -134,6 +134,21 @@ pre-commit install           # optional, run the gates on commit
 If you use the SonarQube for IDE (SonarLint) VS Code extension, it will also apply Sonar's Python
 rules locally; the ruff configuration is set up to cover most of the same ground.
 
+### Benchmarks
+
+Hand-run, never part of the test suite: a timing assertion on shared hardware measures noise.
+
+```bash
+uv run python benchmarks/bench_vs_minisom.py   # vs MiniSom, agreement verified before timing
+uv run python benchmarks/bench_batch.py        # the neighborhood kernel against evaluating per node
+cd asv_benchmarks && uv run --extra bench asv continuous master HEAD   # this package across commits
+```
+
+Results and the method behind them are in
+[Comparison with MiniSom and SOMPY](https://andremsouza.github.io/python-som/explanation/comparison-with-som-libraries/).
+The SOMPY comparison needs an interpreter of its own, since SOMPY cannot be imported on NumPy 2;
+`benchmarks/bench_vs_sompy.py` prints the setup command and installs nothing.
+
 ## References
 
 Based on:
