@@ -4,10 +4,9 @@ Each function maps an initial value, the current iteration and the total number 
 current value. They share one signature so that any of them, or a user-supplied equivalent, can be
 passed as ``learning_rate_decay`` or ``neighborhood_radius_decay``.
 
-Kohonen (2013) does not prescribe a particular form: "The true mathematical form of sigma(t) is not
-crucial, as long as its value is fairly large in the beginning of the process, say, on the order of
-half of the diameter of the grid, whereafter it is gradually reduced to a fraction of it in about
-1000 steps" (Section 4.1).
+Kohonen (2013) Section 4.1 prescribes no particular form: "The true mathematical form of sigma(t)
+is not crucial, as long as its value is fairly large in the beginning of the process ... whereafter
+it is gradually reduced to a fraction of it in about 1000 steps".
 """
 
 from __future__ import annotations
@@ -83,12 +82,9 @@ DECAY_FUNCTIONS: Final[dict[str, DecayFunction]] = {
 }
 """Decay functions by name, so a saved map can name the one it used.
 
-Each key is the function's own name, which is the least surprising mapping and the one a reader can
-check against the source without a lookup table. These names are written into artifacts, so they are
-public API from 0.4.0 and fixed at 1.0.0.
-
-A decay function is not required to be in here: a caller may pass any callable. What a name buys is
-the ability to restore it from a file, and the loader says so explicitly when it cannot.
+Each key is the function's own name. These are written into artifacts, so they are public API from
+0.4.0 and fixed at 1.0.0. A caller may pass any callable; what a name buys is restoring it from a
+file, and the loader says so when it cannot.
 """
 
 

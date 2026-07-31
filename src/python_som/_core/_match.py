@@ -19,19 +19,9 @@ if TYPE_CHECKING:  # pragma: no cover
 
 __all__ = ["accumulate", "activate", "bmu_indices", "quantization", "winner"]
 
-#: Bytes the best-matching-unit search may hold in its score block at once. It sets the chunk size:
-#: ``chunk = budget / (n_nodes * 8)``. Tuned rather than guessed, on a 60x60 map with 2000 samples:
-#:
-#: ======  ========  ========
-#: budget  time      peak
-#: ======  ========  ========
-#: 512 KB  7.62 ms   1.07 MB
-#: 2 MB    7.50 ms   2.57 MB
-#: 8 MB    11.14 ms  8.56 MB
-#: ======  ========  ========
-#:
-#: Larger is both slower and heavier, because a block that fits in cache is read back by ``argmin``
-#: for free and one that does not is read back from memory.
+#: Bytes the winner search may hold in its score block at once, setting the chunk size. Tuned: at
+#: 60x60 with 2000 samples an 8 MB budget is 2.6x slower and 8x heavier, because a block that fits
+#: in cache is read back by ``argmin`` for free. See /explanation/how-batch-training-is-computed.
 _SCORE_BUDGET_BYTES = 512_000
 
 
@@ -95,21 +85,16 @@ def bmu_indices(
     This is Eq. (4) of Kohonen (2013), ``c = argmin_i ||x - m_i||``, for a whole dataset. Ties go to
     the first index in C order, which is ``argmin``'s behaviour and matches :func:`winner`.
 
-    For the Euclidean distance this expands the norm, ``||x - w||^2 = ||x||^2 - 2 x.w + ||w||^2``,
-    and drops ``||x||^2`` because it is constant across models and so cannot move the ``argmin``.
-    What remains is a matrix product, which is 1.8x to 6.3x faster than one full-grid norm per
-    sample. Any other distance takes the loop, since only the Euclidean one has this identity.
+    For the Euclidean distance this expands the norm and drops the ``||x||^2`` term, which is
+    constant across models, leaving a matrix product. Any other distance takes the loop, since only
+    the Euclidean one has that identity.
 
-    **This is not the dot-product map of Kohonen Section 4.5.** That is a different algorithm,
-    ``c = argmax_i dot(x, m_i)`` (Eq. 9), which requires the models to be renormalized to constant
-    length after every cycle and selects a different node when they are not. This is an exact
-    re-expansion of the Euclidean distance and needs no normalization.
+    **Not the dot-product map of Kohonen Section 4.5**, which is a different algorithm requiring
+    renormalized models. This is an exact re-expansion of the Euclidean distance.
 
-    **The models are centred before the product, and that is not an optimization.** Without it the
-    expansion is catastrophically cancelling: with models offset by 1e9, ``||w||^2`` is about 1e18
-    while the differences between models are of order 1, and the subtraction loses every significant
-    digit. Measured, 499 of 500 samples then get a different node. Subtracting a common shift is
-    exact in ``||x - w||``, costs 1%, and removes it at every offset up to 1e12.
+    **The centring is not an optimization.** Without it the expansion cancels catastrophically:
+    with models offset by 1e9, 499 of 500 samples get a different node. See
+    :doc:`/explanation/how-batch-training-is-computed`.
 
     :param data: Dataset of shape ``(n_samples, n_features)``.
     :param weights: Models, of shape ``(x, y, n_features)``.

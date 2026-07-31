@@ -147,19 +147,13 @@ def _warn_on_major_version_change(saved: str | None, path: object) -> None:
 def _validate_learning_rate(learning_rate: float) -> None:
     """Reject a learning rate that cannot train, and warn about one that is merely unwise.
 
-    Unchecked through 0.3.0, and the two failure modes are different in kind:
-
-    A **non-positive** rate is rejected. ``alpha = 0`` freezes every model, so training runs to
-    completion and changes nothing. ``alpha = -1`` is worse: it moves models *away* from the samples
-    they match, taking the quantization error from 0.0 to 11.7 and the largest weight to 30 on a map
-    that started inside the unit cube. Neither can be what a caller meant, and both are silent.
+    A **non-positive** rate is rejected: ``alpha = 0`` freezes every model, and ``alpha = -1`` moves
+    them away from the samples they match, taking the quantization error from 0.0 to 11.7. Both are
+    silent failures.
 
     A rate **above 1** is warned about, not rejected. Eq. (3) moves a model a fraction ``alpha * h``
-    of the way to the sample, so above 1 it overshoots and oscillates around the target rather than
-    settling on it. It does not necessarily diverge: measured at ``alpha = 5`` with decay disabled,
-    the largest weight stayed at 3.61, because the neighborhood damps the correction away from the
-    winner. Kohonen sets no upper bound, so rejecting it would invent a limit the sources do not
-    give.
+    of the way to the sample, so above 1 it overshoots and oscillates. It need not diverge, since
+    the neighborhood damps the correction away from the winner, and Kohonen gives no upper bound.
 
     :param learning_rate: The rate to check.
     :raises ValueError: If the rate is not a finite positive number.
@@ -179,16 +173,6 @@ def _validate_learning_rate(learning_rate: float) -> None:
 
 class SOM:
     """A 2-D self-organizing map over NumPy arrays, pandas DataFrames or plain lists.
-
-    Features:
-        - Stepwise and batch training
-        - Random, random-sampling and linear (PCA) weight initialization
-        - Automatic selection of the map size ratio (with PCA)
-        - Support for cyclic arrays, for toroidal maps
-        - Gaussian, bubble and mexican hat neighborhood functions
-        - Support for custom decay functions
-        - Support for visualization (U-matrix, activation matrix)
-        - Support for supervised learning (label map)
 
     Reference:
     Teuvo Kohonen, Essentials of the self-organizing map, Neural Networks 37 (2013) 52-65,
@@ -523,13 +507,11 @@ class SOM:
     ) -> SOM:
         """Train the map and return it, so calls can be chained.
 
-        ``y`` is accepted and ignored. Unsupervised estimators take it anyway, because that is what
-        lets ``Pipeline`` and ``cross_val_score`` call every step in the same way.
+        ``y`` is accepted and ignored, which is what lets ``Pipeline`` call every step the same way.
 
-        The training options are keyword arguments here rather than constructor arguments, so that
-        :class:`SOM` keeps one place where training is configured. The scikit-learn adapter in
-        :mod:`python_som.sklearn` takes them at construction instead, because ``get_params`` has to
-        expose them for ``GridSearchCV`` to tune them.
+        Training options are keyword arguments here rather than constructor arguments;
+        :mod:`python_som.sklearn` takes them at construction, because ``get_params`` must expose
+        them to ``GridSearchCV``.
 
         :param X: Training dataset of shape ``(n_samples, n_features)``.
         :param y: Ignored.
@@ -572,11 +554,10 @@ class SOM:
     def predict(self, X: DataLike) -> npt.NDArray[np.integer]:  # noqa: N803
         """Return the index of the best-matching node for each sample.
 
-        A **flat** index, not a ``(row, column)`` pair. A 1-D array of labels is what scorers,
-        ``confusion_matrix`` and ``cross_val_score`` all assume, so returning coordinates would read
-        better for a grid and compose with nothing. Recover the grid position with
-        ``np.unravel_index(som.predict(X), som.get_shape())``, or call :meth:`winner` for a single
-        sample, which still returns ``(row, column)``.
+        A **flat** index, not a ``(row, column)`` pair, because that is what scorers and
+        ``confusion_matrix`` assume. Recover the grid position with
+        ``np.unravel_index(som.predict(X), som.get_shape())``; :meth:`winner` still returns
+        coordinates for a single sample.
 
         :param X: Dataset of shape ``(n_samples, n_features)``.
         :return: One flat node index per sample.
@@ -624,12 +605,9 @@ class SOM:
     def set_params(self, **params: Any) -> SOM:  # noqa: ANN401
         """Set constructor-level parameters in place and return this map.
 
-        Only the parameters that can be changed without rebuilding the models are accepted: the
-        rates, the radii and the decays. Changing the grid shape or ``input_len`` would invalidate
-        the weights, so those raise rather than silently leaving a map whose models do not match its
-        own description.
-
-        This is what :meth:`set_learning_rate` and :meth:`set_neighborhood_radius` will become; both
+        Only what can change without rebuilding the models: the rates, radii and decays. The grid
+        shape and ``input_len`` raise, rather than leaving a map whose models do not match its own
+        description. Replaces :meth:`set_learning_rate` and :meth:`set_neighborhood_radius`, which
         still work and are removed in 1.0.0.
 
         :param params: Parameters to set.
@@ -712,13 +690,11 @@ class SOM:
     def save_npz(self, path: str | os.PathLike[str]) -> None:
         """Write the models and their provenance to a single ``.npz`` file.
 
-        The file holds the weights as an array and everything else as JSON beside them: the
-        configuration, the seed, the generator's current state, and the last training report. No
-        pickle is involved on either side, so the result is safe to load without executing code.
+        Weights as an array, everything else as JSON beside them: configuration, seed, generator
+        state and the last training report. No pickle on either side.
 
-        Saving the generator *state* as well as the seed is what lets :meth:`load_npz` resume the
-        same random stream. Re-seeding would restart it, and a resumed run would then silently
-        diverge from an uninterrupted one.
+        The generator *state* is saved as well as the seed, which is what lets :meth:`load_npz`
+        resume the same stream rather than restarting it.
 
         :param path: Destination file.
         """
@@ -749,13 +725,11 @@ class SOM:
     ) -> SOM:
         """Rebuild a map saved by :meth:`save_npz`, models, generator state and all.
 
-        Continuing to train a loaded map produces the same weights as never having stopped, which is
-        the only useful definition of "loaded" for a stochastic process and is what the saved
-        generator state is for.
+        Continuing to train a loaded map gives the same weights as never having stopped, which is
+        what the saved generator state is for.
 
-        The four keyword arguments exist for maps trained with a function this package cannot look
-        up by name. Passing one the file did not need is harmless: it takes precedence over the
-        registered function of the same role.
+        The four keyword arguments are for maps trained with a function this package cannot resolve
+        by name. Passing one the file did not need is harmless.
 
         :param path: File to read.
         :param neighborhood_function: Replacement for a neighborhood that cannot be resolved.
@@ -844,14 +818,8 @@ class SOM:
     ) -> tuple[float | None, float]:
         """Train one sample at a time, updating the winner and its neighbourhood.
 
-        Implements Eq. (3) of Kohonen (2013). ``'sequential'`` cycles through the dataset in order,
-        wrapping around until ``n_iteration`` steps have run.
-
-        ``'random'`` draws samples **with replacement**, i.i.d., which is the stochastic
-        approximation of Robbins and Monro (1951) that Kohonen cites in Section 4.1. Before 0.3.0
-        the draw used ``replace=(n_iteration > len(data))``, so it was a random permutation when the
-        iteration count did not exceed the sample count and i.i.d. only beyond it. That made the
-        character of the sampling depend on the iteration count, which is why it is now uniform.
+        Eq. (3) of Kohonen (2013). ``'sequential'`` cycles the dataset in order; ``'random'`` draws
+        i.i.d. **with replacement**, the Robbins-Monro approximation Kohonen cites in Section 4.1.
 
         :param array: Training dataset.
         :param n_iteration: Number of iterations.
@@ -882,17 +850,11 @@ class SOM:
     ) -> tuple[float | None, float]:
         """Train with the batch algorithm, updating every model concurrently.
 
-        Implements Eq. (8) of Kohonen (2013). The winner map is recomputed from the models as they
-        stood at the start of each iteration, which is what makes the update concurrent.
+        Eq. (8) of Kohonen (2013). The winner map is recomputed from the models as they stood at
+        the start of each iteration, which is what makes the update concurrent (Section 4.4).
 
-        The neighborhood is evaluated **once per iteration**, not once per node. Eq. (8) needs
-        ``h_ji`` for every pair of nodes, and a neighborhood depends only on the offset between the
-        two -- so a single kernel over every offset serves the whole grid, and each node's
-        neighborhood is a slice of it. Evaluating per node instead made the neighborhood 42% of
-        batch training on a 40x40 map, more than the contraction it feeds; measured end to end, the
-        kernel is worth **1.2x to 1.5x**, more with the gaussian than the cheaper bubble. See
-        :func:`~python_som._core._neighborhood.offset_span` for why the offset-only dependence holds
-        on a torus as well as a flat grid, and ``benchmarks/bench_batch.py`` for the measurement.
+        The neighborhood is contracted as two per-axis matrices rather than evaluated per node; see
+        :doc:`/explanation/how-batch-training-is-computed`.
 
         :param array: Training dataset.
         :param n_iteration: Number of iterations.

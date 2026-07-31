@@ -1,27 +1,19 @@
 """Saving and loading a trained map, with the provenance needed to defend a result.
 
 Wilson et al., *Best Practices for Scientific Computing*: a result should carry its inputs,
-parameters and versions. Until 0.4.0 the only way to keep a trained map was ``pickle``, which is
-arbitrary code execution on load. The point here is not to forbid that but to make the safe path the
-obvious one.
+parameters and versions.
 
-**One file.** Everything lives in a single ``.npz``: the models as an array, and the metadata as a
-JSON string stored alongside them. A separate sidecar was the first design and is worse, because
-provenance that can be separated from its artifact will be.
+**One file.** A single ``.npz`` holding the models as an array and the metadata as a JSON string.
+Provenance that can be separated from its artifact will be.
 
-**What cannot be saved, and what happens instead.** A map holds four callables: the neighborhood,
-two decays and the distance. A callable cannot be written to a file without ``pickle``, so what is
-stored is its *name*, resolved on load through the registries in :mod:`python_som._core`. A map
-built entirely from the shipped functions round-trips completely. One built with a caller's own
-function records the name for provenance and refuses to load silently: the loader raises and names
-the argument to pass it back through.
+**Callables are stored by name.** A map holds four: the neighborhood, two decays and the distance.
+Each is resolved on load through the registries in :mod:`python_som._core`, so a map built from the
+shipped functions round-trips completely. One built with a caller's own function records the name
+and refuses to load silently, naming the argument to pass it back through.
 
-**Security.** ``allow_pickle=False`` is passed explicitly on load, so a crafted file containing an
-object array is refused by NumPy rather than executed; strategies resolve only through the
-registries, so no name from the file is ever imported or evaluated; the metadata is parsed with
-``json.loads``. What that buys is "cannot execute code", not "safe to load anything": an ``.npz`` is
-a zip, so a hostile file can still attempt resource exhaustion through decompression. Treat one from
-an untrusted source the way you would a JPEG, not the way you would a signed archive.
+**No pickle.** ``allow_pickle=False`` on load, so a crafted file is refused rather than executed,
+and no name from a file is ever imported. See :doc:`/explanation/artifact-safety` for the limits of
+that guarantee.
 """
 
 from __future__ import annotations

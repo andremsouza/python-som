@@ -31,17 +31,12 @@ def u_matrix(
 ) -> npt.NDArray[np.floating]:
     """Return the U-matrix: the summed distance from each model to its immediate neighbours.
 
-    Ultsch's display (1993), cited by Kohonen (2013) Section 3.6 as the way cluster structure is
-    made visible on the grid: a large value means neighbouring models are far apart, so it reads
-    as a boundary.
+    Ultsch's display (1993), cited by Kohonen (2013) Section 3.6: a large value means neighbouring
+    models are far apart, so it reads as a boundary.
 
-    The adjacency is deliberately a flat ring of radius 1 rather than the configured neighborhood
-    function. The U-matrix describes the grid, not the training schedule. The centre is included and
-    contributes a distance of zero, so it does not affect the sum.
-
-    Distances are computed and consumed one node at a time rather than accumulated into a full
-    ``(x, y, x, y)`` tensor, which would cost ``(x*y)**2`` floats: about 800 MB on a 100x100 map, to
-    produce ``x*y`` numbers.
+    The adjacency is a flat ring of radius 1 rather than the configured neighborhood, because the
+    U-matrix describes the grid and not the training schedule. Distances are consumed one node at a
+    time; the full ``(x, y, x, y)`` tensor would be 800 MB on a 100x100 map.
 
     :param weights: Models, of shape ``(x, y, n_features)``.
     :param shape: Shape of the grid.

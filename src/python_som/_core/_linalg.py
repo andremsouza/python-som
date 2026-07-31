@@ -1,17 +1,11 @@
 """Principal component analysis, and the map sizing that depends on it.
 
-Implemented on ``np.linalg.svd`` rather than scikit-learn. PCA and a z-score were the only two
-things this package used scikit-learn for, and carrying it as a required dependency pulled in scipy,
-joblib and threadpoolctl to reach about twenty lines of linear algebra.
+Built on ``np.linalg.svd`` rather than scikit-learn, which it reproduces exactly, sign convention
+and degenerate columns included. ``tests/test_linalg_matches_sklearn.py`` re-checks that against the
+real scikit-learn on every CI run, which is why scikit-learn is still a test dependency.
 
-The two functions here reproduce ``sklearn.decomposition.PCA(n_components=k)`` and
-``sklearn.preprocessing.StandardScaler().fit_transform`` exactly, sign conventions and
-degenerate-column handling included. "Exactly" is not an assertion of faith:
-``tests/test_linalg_matches_sklearn.py`` re-checks it against the real scikit-learn on every CI run,
-which is why scikit-learn remains a *test* dependency. Two details are easy to get wrong and are
-therefore spelled out where they are implemented: the sign convention is v-based, not the more
-common u-based one, and a near-constant column is scaled by 1 rather than by its own vanishing
-standard deviation.
+See :doc:`/explanation/why-linear-initialization-is-an-svd` for why the SVD is also the more
+accurate of the two routes.
 """
 
 from __future__ import annotations
@@ -45,17 +39,12 @@ class PrincipalComponents(NamedTuple):
 def pca(data: npt.NDArray[Any], n_components: int = _N_COMPONENTS) -> PrincipalComponents:
     """Fit a PCA and return its mean, components and explained variance.
 
-    The singular value decomposition of the centred data gives the components directly: for
-    ``X - mean = U S V^T``, the rows of ``V^T`` are the component directions and ``S^2 / (n - 1)``
+    For ``X - mean = U S V^T``, the rows of ``V^T`` are the component directions and ``S^2 / (n-1)``
     the variance along each.
 
-    **On the sign convention.** An SVD determines each component only up to sign, so a convention is
-    needed for the result to be reproducible. scikit-learn's PCA calls ``svd_flip`` with
-    ``u_based_decision=False``, which orients each component so that its largest-magnitude *loading*
-    is positive. That is the less common of the two conventions in that helper, and taking its
-    default instead would flip the sign of some components: the fit would still be a valid PCA, but
-    it would not be the same one, and linear initialization would lay its models out reversed along
-    that axis.
+    The sign convention is **v-based**: each component is oriented so its largest-magnitude loading
+    is positive, matching scikit-learn's ``svd_flip(..., u_based_decision=False)``. The other
+    convention would give a valid but different PCA, and lay the initial models out reversed.
 
     :param data: Array of shape ``(n_samples, n_features)``.
     :param n_components: Number of components to keep.

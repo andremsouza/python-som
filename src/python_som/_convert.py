@@ -1,19 +1,9 @@
 """The data-input port: whatever the caller passed, in, an ``ndarray`` out.
 
-Through 0.3.0 this module special-cased pandas, testing ``isinstance(data, pd.DataFrame |
-pd.Series)`` before calling ``.to_numpy()``. That was the only use of pandas, and it was redundant:
-``np.asarray`` already converts both through the ``__array__`` protocol, with identical results
-including for nullable extension dtypes, which convert to ``float64`` with ``nan`` either way.
+``np.asarray`` handles every input through the ``__array__`` protocol, so pandas, polars, pyarrow,
+xarray and CuPy all work without this package importing any of them.
 
-Dropping the special case removes a required dependency and **widens** what the package
-accepts, because ``__array__`` is a protocol rather than a library. polars, pyarrow, xarray and CuPy
-objects all implement it and now work without python-som knowing any of them exist. Fewer
-dependencies and more capability at once, which is the argument for a port rather than an adapter
-per library.
-
-The module stays, small as it is, because it is the one place that decides what "a dataset" means.
-When that decision needs to change -- a dtype policy, a shape check, an explicit error for ragged
-input -- there is one place to change it, and the core keeps receiving ``ndarray`` and nothing else.
+Small, and it stays a module because it is the one place that decides what "a dataset" means.
 """
 
 from __future__ import annotations

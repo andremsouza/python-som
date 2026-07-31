@@ -1,25 +1,17 @@
 """Names for the string-valued options, so a typo is a type error rather than a runtime one.
 
-Every option these cover is still accepted as a plain string, and will be for the whole 0.4.x and
-0.5.x series. ``mode=TrainingMode.BATCH`` and ``mode="batch"`` are interchangeable, compare equal,
-hash equal, and serialise to the same JSON, because each member *is* a ``str``.
+Every option is also accepted as a plain string, permanently. ``mode=TrainingMode.BATCH`` and
+``mode="batch"`` are interchangeable, compare equal, hash equal and serialise identically, because
+each member *is* a ``str``. 0.5.0 briefly deprecated the string form and 0.6.0 withdrew that; the
+changelog has the reasoning.
 
-**Both spellings are permanent.** 0.5.0 briefly deprecated plain strings and 0.6.0 withdrew that,
-because every comparable library passes options as strings: scikit-learn
-(``KMeans(init="k-means++")``), numpy (``np.pad(mode="constant")``), scipy
-(``linkage(method="single")``), and both SOM peers, minisom and sompy. None of them export enums at
-all. Being the only library in the ecosystem to reject ``mode="batch"`` would cost users more than
-the consistency was worth.
-
-The enums remain because they cost nothing and some callers prefer them. The type-checking benefit
-that motivated them is delivered by the ``Literal`` unions below rather than by removing anything:
+The type-checking benefit comes from the ``Literal`` unions below rather than from the enums:
 ``mode="bacth"`` is a type error while ``mode="batch"`` is not.
 
-**On the base class.** ``enum.StrEnum`` arrived in Python 3.11 and this package supports 3.10, so
-:class:`_StrEnum` reproduces it. A bare ``class X(str, Enum)`` is *not* equivalent: its ``str()``
-returns ``'X.MEMBER'`` rather than the value, which would put the wrong text into any f-string,
-filename or log line built from a member. Defining ``__str__`` explicitly makes the behaviour
-identical on every supported version, which was checked on 3.10, 3.12 and 3.13 rather than assumed.
+**On the base class.** ``enum.StrEnum`` needs Python 3.11 and this package supports 3.10, so
+:class:`_StrEnum` reproduces it. A bare ``class X(str, Enum)`` is not equivalent: its ``str()``
+returns ``'X.MEMBER'`` rather than the value, which would put the wrong text into any f-string or
+filename built from a member.
 """
 
 from __future__ import annotations

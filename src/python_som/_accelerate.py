@@ -3,22 +3,16 @@
 Installed with ``pip install "python-som[fast]"``. Without it :func:`bmu_kernel` returns None and
 everything runs on the NumPy path, which stays the reference implementation and the default.
 
-**It is an extra rather than a dependency because of one constraint.** numba requires ``numpy<2.5``,
-and this package develops and tests against 2.5. A hard dependency would cap every user's NumPy
-below the version we test on and grow the install from one package to three, 93 MB of which 57 MB is
-llvmlite. Behind an extra, that reaches only someone who asked for it.
+**An extra rather than a dependency** because numba requires ``numpy<2.5`` while this package
+tests against 2.5, so a hard dependency would cap every user's NumPy and grow the install from one
+package to three.
 
-**numba is imported on first use, not on import of this module.** Importing it costs 104 ms, and
-``import python_som`` paying that whether or not a map is ever trained would undo a good part of
-what the extra buys. The first training call absorbs it alongside the JIT compile.
+**numba is imported on first use**, not when this module is imported: it costs 104 ms, and the
+first training call absorbs that alongside the JIT compile.
 
-The kernel fuses the matrix product and the ``argmin`` of
-:func:`~python_som._core._match.bmu_indices`, keeping the running minimum in a register so the score
-matrix is never written at all. That is the whole of the win: the same arithmetic as the BLAS path
-with a fraction of the memory traffic. It does not try to beat BLAS at the product itself.
-
-This module is shell, not core. ``python_som._core`` stays numpy-only, and the kernel reaches it as
-an argument rather than an import.
+The kernel fuses the matrix product and the ``argmin``, keeping the running minimum in a register so
+the score matrix is never written. Worth 1.0x to 2.4x, measured. Shell, not core: the kernel reaches
+``_core`` as an argument rather than an import.
 """
 
 from __future__ import annotations
