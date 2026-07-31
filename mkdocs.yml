@@ -34,6 +34,7 @@ nav:
   - How-to:
       - Save and load a map: how-to/save-and-load-a-map.md
       - Reproduce a result: how-to/reproduce-a-result.md
+      - Speed up training: how-to/speed-up-training.md
       - Use a custom strategy: how-to/use-a-custom-strategy.md
       - Use the estimator interface: how-to/use-with-scikit-learn.md
   - Reference:

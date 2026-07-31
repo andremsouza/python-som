@@ -20,6 +20,16 @@ pip install "python-som[sklearn]"       # adds the scikit-learn estimator adapte
 pip install "python-som[examples]"      # adds matplotlib and seaborn, for the plots
 ```
 
+Training can also use a compiled kernel, worth up to 2.4x on batch training. It is a separate
+package rather than an extra, and it is picked up automatically once present:
+
+```bash
+pip install numba                       # note: numba currently requires numpy<2.5
+```
+
+Confirm it is active with `python_som.accelerated()`. See
+[Speed up training](https://andremsouza.github.io/python-som/how-to/speed-up-training/).
+
 ## Quick start
 
 ```python
@@ -57,7 +67,7 @@ A full worked example with plots is in [examples/iris.py](https://github.com/and
 
 * NumPy is the only runtime dependency; a fresh install is 69 MB across one package
 * Batch training 23x to 31x faster than MiniSom and 26x to 94x faster than SOMPY, measured
-* Optional numba acceleration: `pip install numba` and it is used automatically
+* Optional compiled kernel via numba, used automatically when installed; `accelerated()` reports it
 * Stepwise and batch training
 * Random, random-sampling and linear (PCA) weight initialization
 * Automatic selection of the map size ratio, from PCA

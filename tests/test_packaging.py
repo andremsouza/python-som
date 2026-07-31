@@ -101,3 +101,39 @@ def test_dev_dependencies_are_pinned_exactly(pyproject: dict[str, Any]) -> None:
         for spec in pyproject["project"]["optional-dependencies"][group]:
             requirement = spec.split(";")[0].strip()
             assert "==" in requirement, f"{group} dependency is not pinned: {spec}"
+
+
+def _readme_section(name: str) -> str:
+    """Return one ``## `` section of the README, which is also the PyPI description.
+
+    :param name: Heading text, without the ``## ``.
+    :return: The section body.
+    """
+    lines = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8").splitlines()
+    start = next(n for n, line in enumerate(lines) if line.strip() == f"## {name}")
+    end = next((n for n in range(start + 1, len(lines)) if lines[n].startswith("## ")), len(lines))
+    return "\n".join(lines[start:end])
+
+
+def test_the_install_section_mentions_every_installable_option() -> None:
+    """The README is the PyPI description, and a published description cannot be edited.
+
+    0.7.0 shipped the numba acceleration with its only user-facing mention in the feature list, so
+    someone reading Install to decide what to install never saw it. Correcting that took a release.
+    Asserting on the Install section rather than the whole description is the point: the string was
+    present in 0.7.0 and still in the wrong place.
+    """
+    section = _readme_section("Install")
+    for option in (
+        "pip install python-som",
+        "[cli]",
+        "[sklearn]",
+        "[examples]",
+        "pip install numba",
+    ):
+        assert option in section, f"the Install section does not mention {option!r}"
+
+
+def test_the_install_section_warns_that_numba_constrains_numpy() -> None:
+    """Installing numba downgrades NumPy, which a reader has to know before running the command."""
+    assert "numpy<2.5" in _readme_section("Install")
