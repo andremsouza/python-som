@@ -102,12 +102,6 @@ analysis = [
 sklearn = [
     "scikit-learn>=1.4",
 ]
-# Optional numba kernel for the winner search, worth 1.0x to 2.4x. An extra rather than a
-# dependency because numba requires numpy<2.5 while this package tests against 2.5, so it would cap
-# every user's NumPy. Opting in accepts that cap.
-fast = [
-    "numba>=0.66",
-]
 examples = [
     "matplotlib>=3.8",
     "pandas>=2.0",
@@ -212,11 +206,14 @@ ignore_missing_imports = true
 module = ["python_som.sklearn"]
 disallow_subclassing_any = false
 
-# numba ships no py.typed, so --strict rejects the jitted function as untyped. Relaxed for the
-# accelerator alone; its contract is the BmuKernel protocol, checked by a differential test.
+# numba ships no py.typed, so --strict rejects the jit decorator and `prange` as untyped. Relaxed
+# for the accelerator alone; its contract is the BmuKernel protocol, checked by a differential test.
+# These only fire when numba is installed, which is the accelerated-path CI job.
 [[tool.mypy.overrides]]
 module = ["python_som._accelerate"]
 disallow_untyped_decorators = false
+disallow_untyped_calls = false
+disable_error_code = ["attr-defined"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"

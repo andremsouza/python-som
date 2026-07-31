@@ -1,14 +1,14 @@
 """The optional numba kernel must select exactly the nodes the NumPy path selects.
 
-``pip install "python-som[fast]"`` swaps a compiled kernel into the best-matching-unit search. It is
-a second implementation of the hottest code in the package, and the whole reason that is acceptable
-is that the NumPy path stays the reference and this file asserts the two agree.
+``pip install numba`` swaps a compiled kernel into the best-matching-unit search. It is a second
+implementation of the hottest code in the package, and the whole reason that is acceptable is that
+the NumPy path stays the reference and this file asserts the two agree.
 
 Agreement here is **identical indices**, not close ones. Both compute
 ``||w||^2 - 2 x.w`` over the same centred arrays, so there is no reason for them to differ, and a
 tolerance would hide the case where one of them is wrong.
 
-Skipped wholesale without the extra. The CI job that installs it is what stops this file silently
+Skipped wholesale without numba. The CI job that installs it is what stops this file silently
 skipping everywhere, which is the failure mode a guarded test file has.
 """
 
@@ -25,7 +25,7 @@ from python_som._core._match import accumulate, bmu_indices
 
 BMU_KERNEL = bmu_kernel()
 
-pytestmark = pytest.mark.skipif(BMU_KERNEL is None, reason="needs the 'fast' extra")
+pytestmark = pytest.mark.skipif(BMU_KERNEL is None, reason="needs numba")
 
 #: Fixed so a failure is reproducible.
 SEED = 20260730
@@ -152,11 +152,11 @@ def test_a_custom_distance_still_bypasses_the_kernel() -> None:
 
 
 def test_importing_the_package_does_not_import_numba() -> None:
-    """Installing the extra must not add 104 ms to every ``import python_som``.
+    """Installing numba must not add 104 ms to every ``import python_som``.
 
     numba is deferred to the first call that needs it, where the JIT compile is paid anyway. A
     module-level import in ``_accelerate`` would be invisible in every other test here and would
-    quietly undo part of what the extra buys.
+    quietly undo part of what numba buys.
 
     A subprocess, because numba is certainly already imported in this one.
     """

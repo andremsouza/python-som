@@ -70,22 +70,23 @@ jobs:
           enable-cache: true
           python-version: "3.12"
 
-      # numba requires numpy<2.5, so this job deliberately resolves an older NumPy than the rest of
-      # the matrix. That is the constraint the extra exists to contain: it applies here and to
-      # anyone who opts in, and to nobody else.
-      - run: uv sync --extra dev --extra fast
+      # numba is NOT a declared extra of this package, deliberately: uv resolves every extra into
+      # one lockfile, so declaring it would cap NumPy below 2.5 for the whole project and the test
+      # matrix would then run against an older NumPy than the package releases against. It is
+      # installed ad hoc here instead, which is also how a user installs it.
+      - run: uv sync --extra dev
 
-      # `-k numba` must PASS, not skip. tests/test_numba_kernel.py is guarded by the extra being
-      # importable, so without this job it would skip in every environment and the second
-      # implementation of the hottest code in the package would go unchecked.
+      # These must PASS, not skip. tests/test_numba_kernel.py is guarded by numba being importable,
+      # so without this job it would skip everywhere and the second implementation of the hottest
+      # code in the package would go unchecked.
       - name: the differential tests run rather than skip
         run: |
-          uv run pytest tests/test_numba_kernel.py -v --no-header | tee result.txt
+          uv run --with "numba<0.67" pytest tests/test_numba_kernel.py -v --no-header | tee result.txt
           grep -q PASSED result.txt
-          if grep -q SKIPPED result.txt; then echo "numba tests skipped; the extra did not install"; exit 1; fi
+          if grep -q SKIPPED result.txt; then echo "numba tests skipped; numba did not install"; exit 1; fi
 
-      - name: the whole suite still passes with the extra installed
-        run: uv run pytest -q
+      - name: the whole suite still passes with numba present
+        run: uv run --with "numba<0.67" pytest -q
 
   no-extras:
     name: numpy only, no extras

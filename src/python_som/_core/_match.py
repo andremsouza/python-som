@@ -111,7 +111,7 @@ def bmu_indices(
     centred = flat - shift
     squared = np.einsum("nf,nf->n", centred, centred)
 
-    if kernel is not None:  # pragma: no cover  reached only with the `fast` extra
+    if kernel is not None:  # pragma: no cover  reached only when numba is installed
         return kernel(data - shift, centred, squared)
 
     n_nodes = len(flat)

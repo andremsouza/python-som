@@ -42,18 +42,18 @@ rather than a patch.
 
 ### Added
 
-- **An optional `fast` extra** with a numba kernel for the winner search:
+- **Optional numba acceleration** for the winner search, used automatically when numba is present:
 
   ```bash
-  pip install "python-som[fast]"
+  pip install numba
   ```
 
   Worth 1.0x to 2.4x on top of the above, with bit-identical results, and uneven: where the
-  neighborhood update dominates it changes little. An extra rather than a dependency because numba
-  requires `numpy<2.5` while this package tests against 2.5, so making it required would cap every
-  user's NumPy. A plain `pip install python-som` is still NumPy and nothing else, which a CI job
-  now checks. numba is imported on first use, so installing the extra does not slow `import
-  python_som`.
+  neighborhood update dominates it changes little. Deliberately neither a dependency nor an extra.
+  numba 0.66 requires `numpy<2.5` while this package releases against 2.5, so requiring it would cap
+  every user's NumPy, and declaring it as an extra caps the lockfile, since uv resolves every extra
+  together. A plain `pip install python-som` is still NumPy and nothing else, which a CI job checks.
+  numba is imported on first use, so installing it does not slow `import python_som`.
 
 - **Two explanation pages**: how batch training is computed, and why linear initialization is an
   SVD. Both hold derivations that used to sit in docstrings.

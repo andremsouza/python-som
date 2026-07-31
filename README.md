@@ -18,7 +18,6 @@ pip install python-som                  # requires Python 3.10+; NumPy is the on
 pip install "python-som[cli]"           # adds tqdm progress bars
 pip install "python-som[sklearn]"       # adds the scikit-learn estimator adapter
 pip install "python-som[examples]"      # adds matplotlib and seaborn, for the plots
-pip install "python-som[fast]"          # adds a numba kernel; note it requires numpy<2.5
 ```
 
 ## Quick start
@@ -58,6 +57,7 @@ A full worked example with plots is in [examples/iris.py](https://github.com/and
 
 * NumPy is the only runtime dependency; a fresh install is 69 MB across one package
 * Batch training 23x to 31x faster than MiniSom and 26x to 94x faster than SOMPY, measured
+* Optional numba acceleration: `pip install numba` and it is used automatically
 * Stepwise and batch training
 * Random, random-sampling and linear (PCA) weight initialization
 * Automatic selection of the map size ratio, from PCA
@@ -138,6 +138,10 @@ uv run pip-audit             # known vulnerabilities in the resolved set
 uv run mkdocs serve          # docs, locally
 pre-commit install           # optional, run the gates on commit
 ```
+
+numba is not a declared extra: uv resolves every extra into one lockfile, so declaring it would cap
+NumPy below 2.5 for the whole project. Install it alongside when working on the accelerated path,
+with `uv run --with numba pytest tests/test_numba_kernel.py`.
 
 If you use the SonarQube for IDE (SonarLint) VS Code extension, it will also apply Sonar's Python
 rules locally; the ruff configuration is set up to cover most of the same ground.
