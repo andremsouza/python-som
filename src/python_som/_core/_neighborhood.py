@@ -28,25 +28,24 @@ from typing import Final
 import numpy as np
 import numpy.typing as npt
 
-from ._protocols import KernelFunction, NeighborhoodFunction
+from ._protocols import AxisProfile, KernelFunction, NeighborhoodFunction
 
 __all__ = [
+    "AXIS_PROFILES",
     "NEIGHBORHOOD_FUNCTIONS",
-    "NEIGHBORHOOD_KERNELS",
     "SIGNED_NEIGHBORHOODS",
+    "AxisProfile",
     "KernelFunction",
     "NeighborhoodFunction",
+    "axis_matrix",
     "axis_offsets",
     "bubble",
-    "bubble_kernel",
+    "bubble_axis_profile",
     "gaussian",
-    "gaussian_kernel",
-    "kernel_view",
+    "gaussian_axis_profile",
     "mexican_hat",
-    "mexican_hat_kernel",
-    "offset_span",
     "resolve",
-    "resolve_kernel",
+    "resolve_axis_profile",
     "squared_grid_distance",
 ]
 
@@ -88,28 +87,6 @@ def axis_offsets(length: int, center: int, *, cyclic: bool) -> npt.NDArray[np.fl
     return d
 
 
-def offset_span(length: int, *, cyclic: bool) -> npt.NDArray[np.floating]:
-    """Every offset any pair of nodes on this axis can have: ``-(length-1) .. (length-1)``.
-
-    The full-range counterpart of :func:`axis_offsets`, which gives the offsets from one particular
-    centre. Because a neighborhood depends on the offset alone and never on where the winner sits,
-    one array over this span serves every node -- which is what lets batch training evaluate the
-    neighborhood once per iteration instead of once per node.
-
-    The cyclic fold is the same minimum-image convention, applied with the real period ``length``
-    rather than the span's own width. That is the whole reason this cannot be expressed as
-    ``axis_offsets`` on a ``2*length-1`` axis: the fold would then use the wrong period.
-
-    :param length: Number of nodes along the axis.
-    :param cyclic: Whether the axis wraps around.
-    :return: Signed offsets, ``2 * length - 1`` of them, centred on zero.
-    """
-    d = np.arange(-(length - 1), length, dtype=float)
-    if cyclic:
-        d = (d + length / 2) % length - length / 2
-    return d
-
-
 def squared_grid_distance(
     shape: Grid, c: Coordinates, cyclic: tuple[bool, bool]
 ) -> npt.NDArray[np.floating]:
@@ -126,16 +103,10 @@ def squared_grid_distance(
 
 
 # ---------------------------------------------------------------------------------------------
-# The profiles: one implementation of each formula, shared by the per-node and kernel forms.
+# The profiles: one implementation of each formula.
 #
-# Each takes the two axes' offsets rather than a grid and a centre, because that is the only thing
-# the two forms differ in: the per-node function passes `axis_offsets` from one winner, and the
-# kernel builder passes `offset_span` covering every winner at once. Keeping one copy of the formula
-# is what makes the two bit-identical by construction rather than by agreement, which matters here:
-# the defect that started this whole investigation was a plausible-looking second version of the
-# mexican hat that disagreed with the first.
-#
-# Validation lives here, so neither form can skip it.
+# Each takes the two axes' offsets rather than a grid and a centre, so the public function above can
+# supply the offsets from one winner. Validation lives here, so no caller can skip it.
 # ---------------------------------------------------------------------------------------------
 
 
@@ -296,6 +267,107 @@ NEIGHBORHOOD_FUNCTIONS: Final[dict[str, NeighborhoodFunction]] = {
 }
 """Neighborhood functions by name. ``mexican_hat`` is an alias of ``mexicanhat``."""
 
+
+# ---------------------------------------------------------------------------------------------
+# Axis profiles: the per-axis factor of a separable neighborhood.
+#
+# Eq. (8) sums h over every pair of nodes. Because h depends only on the offset between two nodes,
+# that sum is a convolution, and a separable h turns it into two small matrix contractions instead
+# of one pass per node. `AXIS_PROFILES` holds the factor for each neighborhood that has one.
+#
+# The isotropic definitions above remain the only definitions. A profile here is a contraction
+# strategy for a function of sqdist, never a redefinition of it: the gaussian factors because the
+# exponential does, and the bubble factors because its metric is Chebyshev. The mexican hat has no
+# entry, and must not acquire one. (1 - u) exp(-u) does not factor, and an outer product of two 1-D
+# Ricker wavelets is a different function, positive in the diagonal quadrants where the mexican hat
+# must inhibit. See the module docstring.
+# ---------------------------------------------------------------------------------------------
+
+
+def gaussian_axis_profile(d: npt.NDArray[np.floating], sigma: float) -> npt.NDArray[np.floating]:
+    """Per-axis factor of the gaussian, ``exp(-d^2 / (2 sigma^2))``.
+
+    The product of this over the two axes is :func:`gaussian`, because
+    ``exp(-(dx^2 + dy^2) / 2s^2) == exp(-dx^2 / 2s^2) * exp(-dy^2 / 2s^2)``.
+
+    :param d: Offsets along one axis.
+    :param sigma: Neighborhood radius. Must be finite and positive.
+    :return: Weights for those offsets.
+    :raises ValueError: If the radius is not a finite positive number.
+    """
+    _validate_radius(sigma)
+    return np.exp(-np.square(d) / (2.0 * sigma * sigma))
+
+
+def bubble_axis_profile(d: npt.NDArray[np.floating], sigma: float) -> npt.NDArray[np.floating]:
+    """Per-axis factor of the bubble, the indicator ``|d| <= round(sigma)``.
+
+    The product of this over the two axes is :func:`bubble`. It factors because the bubble's metric
+    is Chebyshev, ``max(|dx|, |dy|) <= r``, which is the conjunction of two per-axis tests. A
+    Euclidean disc, which Kohonen's "up to a certain radius" (Section 4.2) reads as, would not.
+
+    :param d: Offsets along one axis.
+    :param sigma: Neighborhood radius, rounded to the nearest integer. Must be finite and
+        non-negative.
+    :return: Weights for those offsets.
+    :raises ValueError: If the radius is not a finite non-negative number.
+    """
+    _validate_radius(sigma, allow_zero=True)
+    return (np.abs(d) <= int(np.around(sigma))).astype(float)
+
+
+AXIS_PROFILES: Final[dict[str, AxisProfile]] = {
+    "gaussian": gaussian_axis_profile,
+    "bubble": bubble_axis_profile,
+}
+"""Per-axis factor of each separable neighborhood function, keyed as :data:`NEIGHBORHOOD_FUNCTIONS`.
+
+Batch training resolves a neighborhood here, so this registry is what decides which functions batch
+training can run. A neighborhood absent from it is rejected by name rather than approximated.
+"""
+
+
+def resolve_axis_profile(name: str) -> AxisProfile:
+    """Look up the per-axis factor of a neighborhood function by name.
+
+    :param name: Name of the neighborhood function.
+    :return: The corresponding axis profile.
+    :raises ValueError: If the function has no axis profile, and so is not separable.
+    """
+    try:
+        return AXIS_PROFILES[name]
+    except KeyError as exc:
+        valid = sorted(AXIS_PROFILES)
+        msg = (
+            f"The {name!r} neighborhood function is not separable, so it has no axis profile. "
+            f"Value should be one of {valid}"
+        )
+        raise ValueError(msg) from exc
+
+
+def axis_matrix(
+    length: int, sigma: float, *, cyclic: bool, profile: AxisProfile
+) -> npt.NDArray[np.floating]:
+    """Build ``H[a, c] = profile(a - c)`` for every pair of coordinates on one axis.
+
+    Contracting ``sums`` against one of these per axis evaluates Eq. (8) for every node at once. The
+    matrix is ``length x length`` rather than the ``2 * length - 1`` a full-offset kernel needs.
+
+    The cyclic fold is the same minimum-image convention as :func:`axis_offsets`, applied to the
+    pairwise offsets.
+
+    :param length: Number of nodes along the axis.
+    :param sigma: Neighborhood radius.
+    :param cyclic: Whether the axis wraps around.
+    :param profile: Per-axis factor to evaluate, from :data:`AXIS_PROFILES`.
+    :return: Weights of shape ``(length, length)``.
+    """
+    d = np.subtract.outer(np.arange(length), np.arange(length)).astype(float)
+    if cyclic:
+        d = (d + length / 2) % length - length / 2
+    return profile(d, sigma)
+
+
 SIGNED_NEIGHBORHOODS: Final[frozenset[str]] = frozenset({"mexicanhat", "mexican_hat"})
 """Names of neighborhood functions that take negative values, which batch training cannot use."""
 
@@ -311,111 +383,6 @@ def resolve(name: str) -> NeighborhoodFunction:
         return NEIGHBORHOOD_FUNCTIONS[name]
     except KeyError as exc:
         valid = sorted(NEIGHBORHOOD_FUNCTIONS)
-        msg = (
-            f"Invalid value for 'neighborhood_function' parameter: {name!r}. "
-            f"Value should be one of {valid}"
-        )
-        raise ValueError(msg) from exc
-
-
-# ---------------------------------------------------------------------------------------------
-# Kernels: one evaluation per iteration instead of one per node.
-# ---------------------------------------------------------------------------------------------
-
-
-def gaussian_kernel(
-    shape: Grid, sigma: float, cyclic: tuple[bool, bool]
-) -> npt.NDArray[np.floating]:
-    """Evaluate the gaussian over every offset, to be sliced per node by :func:`kernel_view`.
-
-    :param shape: Shape of the network.
-    :param sigma: Neighborhood radius.
-    :param cyclic: Whether each axis wraps around.
-    :return: Weights of shape ``(2 * shape[0] - 1, 2 * shape[1] - 1)``.
-    :raises ValueError: If the radius is not a finite positive number.
-    """
-    return _gaussian_profile(
-        offset_span(shape[0], cyclic=cyclic[0]), offset_span(shape[1], cyclic=cyclic[1]), sigma
-    )
-
-
-def mexican_hat_kernel(
-    shape: Grid, sigma: float, cyclic: tuple[bool, bool]
-) -> npt.NDArray[np.floating]:
-    """Evaluate the mexican hat over every offset. See :func:`gaussian_kernel`.
-
-    :param shape: Shape of the network.
-    :param sigma: Neighborhood radius.
-    :param cyclic: Whether each axis wraps around.
-    :return: Weights of shape ``(2 * shape[0] - 1, 2 * shape[1] - 1)``.
-    :raises ValueError: If the radius is not a finite positive number.
-    """
-    return _mexican_hat_profile(
-        offset_span(shape[0], cyclic=cyclic[0]), offset_span(shape[1], cyclic=cyclic[1]), sigma
-    )
-
-
-def bubble_kernel(shape: Grid, sigma: float, cyclic: tuple[bool, bool]) -> npt.NDArray[np.floating]:
-    """Evaluate the bubble over every offset. See :func:`gaussian_kernel`.
-
-    :param shape: Shape of the network.
-    :param sigma: Neighborhood radius.
-    :param cyclic: Whether each axis wraps around.
-    :return: Weights of shape ``(2 * shape[0] - 1, 2 * shape[1] - 1)``.
-    :raises ValueError: If the radius is not a finite non-negative number.
-    """
-    return _bubble_profile(
-        offset_span(shape[0], cyclic=cyclic[0]), offset_span(shape[1], cyclic=cyclic[1]), sigma
-    )
-
-
-NEIGHBORHOOD_KERNELS: Final[dict[str, KernelFunction]] = {
-    "gaussian": gaussian_kernel,
-    "bubble": bubble_kernel,
-    "mexicanhat": mexican_hat_kernel,
-    "mexican_hat": mexican_hat_kernel,
-}
-"""Kernel form of each neighborhood function, keyed exactly as :data:`NEIGHBORHOOD_FUNCTIONS`.
-
-Every registered name has one, which is what lets batch training use the kernel path unconditionally
-instead of carrying a fallback branch for a case that cannot arise.
-"""
-
-
-def kernel_view(
-    kernel: npt.NDArray[np.floating], shape: Grid, c: Coordinates
-) -> npt.NDArray[np.floating]:
-    """Extract node ``c``'s neighborhood from a kernel, as a view rather than a copy.
-
-    The kernel is indexed by offset, with offset zero at ``(shape[0] - 1, shape[1] - 1)``. Node
-    ``c`` sees offsets ``i - c`` for each node ``i``, so its neighborhood is the ``shape``-sized
-    block starting at ``(shape[0] - 1 - c[0], shape[1] - 1 - c[1])``.
-
-    Returning a view is the point: copying ``shape[0] * shape[1]`` floats per node would give back
-    much of what evaluating the kernel once saved. Downstream reads it only, and ``np.sum`` and
-    ``np.einsum`` are both happy with a non-contiguous view.
-
-    :param kernel: Kernel from one of the ``*_kernel`` functions.
-    :param shape: Shape of the network.
-    :param c: Coordinates of the node whose neighborhood is wanted.
-    :return: A read-only-by-convention view of shape ``shape``.
-    """
-    return kernel[
-        shape[0] - 1 - c[0] : 2 * shape[0] - 1 - c[0], shape[1] - 1 - c[1] : 2 * shape[1] - 1 - c[1]
-    ]
-
-
-def resolve_kernel(name: str) -> KernelFunction:
-    """Look up the kernel form of a neighborhood function by name.
-
-    :param name: Name of the neighborhood function.
-    :return: The corresponding kernel builder.
-    :raises ValueError: If the name is not recognised.
-    """
-    try:
-        return NEIGHBORHOOD_KERNELS[name]
-    except KeyError as exc:
-        valid = sorted(NEIGHBORHOOD_KERNELS)
         msg = (
             f"Invalid value for 'neighborhood_function' parameter: {name!r}. "
             f"Value should be one of {valid}"

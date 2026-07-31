@@ -23,7 +23,13 @@ if TYPE_CHECKING:  # pragma: no cover
     import numpy as np
     import numpy.typing as npt
 
-__all__ = ["DecayFunction", "DistanceFunction", "KernelFunction", "NeighborhoodFunction"]
+__all__ = [
+    "AxisProfile",
+    "DecayFunction",
+    "DistanceFunction",
+    "KernelFunction",
+    "NeighborhoodFunction",
+]
 
 
 @runtime_checkable
@@ -88,11 +94,33 @@ class DistanceFunction(Protocol):
 
 
 @runtime_checkable
+class AxisProfile(Protocol):
+    """The per-axis factor of a separable neighborhood, as a function of offsets along one axis.
+
+    Batch training contracts one of these per axis instead of evaluating the neighborhood per node.
+    Only defined where the factorisation is an identity: the gaussian, because the exponential
+    factors, and the bubble, because its metric is Chebyshev. It is not a general way to build a
+    neighborhood, and :class:`NeighborhoodFunction` remains the definition.
+    """
+
+    def __call__(self, d: npt.NDArray[np.floating], sigma: float, /) -> npt.NDArray[np.floating]:
+        """Evaluate the factor over offsets along one axis.
+
+        :param d: Offsets along the axis.
+        :param sigma: Neighborhood radius.
+        :return: Weights for those offsets.
+        """
+        ...
+
+
+@runtime_checkable
 class KernelFunction(Protocol):
     """A neighborhood evaluated over every offset at once, independent of any particular winner.
 
-    The kernel form of a :class:`NeighborhoodFunction`, used by batch training so that the
-    neighborhood is computed once per iteration rather than once per node.
+    .. deprecated:: 0.7.0
+        Batch training now contracts an :class:`AxisProfile` per axis, and nothing in the package
+        produces a kernel. Retained because it is part of the public surface; it will be removed at
+        1.0.0.
     """
 
     def __call__(

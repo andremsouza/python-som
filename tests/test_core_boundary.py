@@ -17,7 +17,7 @@ import pytest
 import python_som
 from python_som import WeightInit
 from python_som._core import _update
-from python_som._core._neighborhood import gaussian
+from python_som._core._neighborhood import axis_matrix, gaussian, gaussian_axis_profile
 from tests.conftest import MODEL_SEED, make_som
 
 #: The core package on disk, scanned rather than imported.
@@ -154,9 +154,9 @@ def test_batch_update_leaves_unreached_models_untouched() -> None:
     weights = np.arange(4 * 4 * 2, dtype=float).reshape((*shape, 2))
     sums = np.zeros((*shape, 2))
     counts = np.zeros(shape)  # no data anywhere
-    result = _update.batch_update(
-        weights, sums, counts, lambda node: gaussian(shape, node, 1.0, (False, False)), shape
-    )
+    hx = axis_matrix(shape[0], 1.0, cyclic=False, profile=gaussian_axis_profile)
+    hy = axis_matrix(shape[1], 1.0, cyclic=False, profile=gaussian_axis_profile)
+    result = _update.batch_update(weights, sums, counts, hx, hy)
     np.testing.assert_array_equal(result, weights)
 
 
@@ -167,9 +167,9 @@ def test_batch_update_returns_a_new_array() -> None:
     original = weights.copy()
     counts = np.ones(shape)
     sums = np.full((*shape, 2), 5.0)
-    result = _update.batch_update(
-        weights, sums, counts, lambda node: gaussian(shape, node, 1.0, (False, False)), shape
-    )
+    hx = axis_matrix(shape[0], 1.0, cyclic=False, profile=gaussian_axis_profile)
+    hy = axis_matrix(shape[1], 1.0, cyclic=False, profile=gaussian_axis_profile)
+    result = _update.batch_update(weights, sums, counts, hx, hy)
     assert result is not weights
     np.testing.assert_array_equal(weights, original)
 

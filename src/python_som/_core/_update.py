@@ -28,12 +28,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Callable
-
     import numpy.typing as npt
-
-    #: Given node coordinates, return that node's neighborhood over the grid.
-    NeighborhoodOf = Callable[[tuple[int, int]], npt.NDArray[np.floating]]
 
 __all__ = ["batch_update", "stepwise_update"]
 
@@ -69,39 +64,46 @@ def batch_update(
     weights: npt.NDArray[Any],
     sums: npt.NDArray[np.floating],
     counts: npt.NDArray[np.floating],
-    neighborhood_of: NeighborhoodOf,
-    shape: tuple[int, int],
+    hx: npt.NDArray[np.floating],
+    hy: npt.NDArray[np.floating],
 ) -> npt.NDArray[np.floating]:
     """Recompute every model as the neighborhood-weighted mean of the data around it.
 
     This is Eq. (8) of Kohonen (2013),
     ``m_i = sum_j n_j h_ji xbar_j / sum_j n_j h_ji``, where ``sums[j]`` is ``n_j * xbar_j``.
 
-    Two properties are worth stating because they are easy to get wrong:
+    That sum runs over every pair of nodes, and because ``h`` depends only on the offset between
+    two nodes it is a convolution. Given the neighborhood as a product of per-axis factors,
+    ``h_ji == hx[j_x, i_x] * hy[j_y, i_y]``, it contracts to two matrix products and every node is
+    computed at once. Kohonen derives Eq. (8) from Eq. (7) on the same grounds, that "the same
+    addends occur a great number of times" (Section 4.4); this is the same observation applied once
+    more.
+
+    Three properties, each easy to lose:
+
+    **Every model is computed from the models as they stood at the start of the iteration.** Kohonen
+    Section 4.4: the old values "are replaced by the respective means, in one concurrent computing
+    operation over all nodes of the grid". Nothing here reads a partially updated array.
 
     **A model with no data in its neighborhood keeps its previous value.** Building the result from
-    a zeroed array instead destroys it; on a 30x30 map with 20 samples and a small radius that
-    wiped 282 of 900 models in a single step.
+    a zeroed array instead destroys it; on a 30x30 map with 20 samples and a small radius that wiped
+    282 of 900 models in a single step. ``out=updated`` with ``where=`` is what preserves it.
 
     **The denominator needs no tolerance, only ``> 0``.** Every term of ``sum_j n_j h_ji`` is
     non-negative, because a signed neighborhood cannot reach this function: batch training rejects
     the mexican hat, and a caller cannot supply an arbitrary neighborhood since only registered
     names resolve. A sum of non-negative floats admits no cancellation, so it is zero exactly when
-    every term is zero, which is exactly the "no data in reach" case. An epsilon here would be an
-    invented number guarding a condition that cannot arise.
+    every term is zero, which is exactly the "no data in reach" case.
 
     :param weights: Current models, of shape ``(x, y, n_features)``.
     :param sums: Per-node sums of the samples mapped to each node.
     :param counts: Per-node counts of the samples mapped to each node.
-    :param neighborhood_of: Callable taking node coordinates and returning its neighborhood.
-    :param shape: Shape of the grid.
+    :param hx: Per-axis neighborhood factor for the first axis, of shape ``(x, x)``.
+    :param hy: Per-axis neighborhood factor for the second axis, of shape ``(y, y)``.
     :return: The updated models, as a new array.
     """
+    numerator = np.einsum("ac,bd,cdf->abf", hx, hy, sums, optimize=True)
+    denominator = np.einsum("ac,bd,cd->ab", hx, hy, counts, optimize=True)
     updated = weights.copy()
-    for node in np.ndindex(shape):
-        node_2d = (int(node[0]), int(node[1]))
-        h = neighborhood_of(node_2d)
-        denominator = float(np.sum(h * counts))
-        if denominator > 0:
-            updated[node_2d] = np.einsum("xy,xyf->f", h, sums) / denominator
+    np.divide(numerator, denominator[..., None], out=updated, where=denominator[..., None] > 0)
     return updated

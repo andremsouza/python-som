@@ -39,9 +39,9 @@ from ._core._maps import activation_matrix, label_map, u_matrix, winner_map
 from ._core._match import accumulate, activate, quantization, winner
 from ._core._neighborhood import (
     SIGNED_NEIGHBORHOODS,
-    kernel_view,
+    axis_matrix,
     resolve,
-    resolve_kernel,
+    resolve_axis_profile,
 )
 from ._core._update import batch_update, stepwise_update
 from ._enums import (
@@ -449,6 +449,10 @@ class SOM:
                 "denominator is not sign-definite. Use mode='random' or mode='sequential'."
             )
             raise ValueError(msg)
+        # A neighborhood that is unsigned but not separable would pass the check above and then be
+        # refused by `resolve_axis_profile` in `_train_batch`, which names the constraint. No
+        # separate guard here: every unsigned neighborhood is separable today, so it would be an
+        # untested branch for a case that cannot yet arise.
 
         if n_iteration is None:
             n_iteration = DEFAULT_ITERATIONS_PER_SAMPLE[mode] * len(array)
@@ -897,28 +901,14 @@ class SOM:
         :param n_iteration: Number of iterations.
         :param verbose: Whether to show a progress bar.
         """
-        build_kernel = resolve_kernel(self._neighborhood_function_name)
+        profile = resolve_axis_profile(self._neighborhood_function_name)
         sigma = self._neighborhood_radius
         for t in self._progress(range(n_iteration), n_iteration, verbose=verbose):
             sigma = self._sigma(t, n_iteration)
             sums, counts = accumulate(array, self._weights, self._shape, self._distance_function)
-            kernel = build_kernel(self._shape, sigma, self._cyclic)
-
-            def neighborhood_of(
-                node: tuple[int, int], evaluated: npt.NDArray[np.floating] = kernel
-            ) -> npt.NDArray[np.floating]:
-                """Take this iteration's neighborhood for ``node`` out of the kernel.
-
-                ``evaluated`` is a default argument rather than a closure over ``kernel`` so that
-                the value is bound at definition time, once per iteration.
-
-                :param node: Coordinates of the node whose neighborhood is wanted.
-                :param evaluated: This iteration's kernel.
-                :return: Neighborhood weights over the grid, as a view into the kernel.
-                """
-                return kernel_view(evaluated, self._shape, node)
-
-            self._weights = batch_update(self._weights, sums, counts, neighborhood_of, self._shape)
+            hx = axis_matrix(self._shape[0], sigma, cyclic=self._cyclic[0], profile=profile)
+            hy = axis_matrix(self._shape[1], sigma, cyclic=self._cyclic[1], profile=profile)
+            self._weights = batch_update(self._weights, sums, counts, hx, hy)
 
         # No learning rate: Eq. (8) is a weighted mean, so there is no step size to report. None
         # rather than the unused initial value, which would read as though it had been applied.
