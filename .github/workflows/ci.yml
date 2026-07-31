@@ -80,7 +80,7 @@ jobs:
       # implementation of the hottest code in the package would go unchecked.
       - name: the differential tests run rather than skip
         run: |
-          uv run pytest tests/test_numba_kernel.py -v --no-header -p no:randomly | tee result.txt
+          uv run pytest tests/test_numba_kernel.py -v --no-header | tee result.txt
           grep -q PASSED result.txt
           if grep -q SKIPPED result.txt; then echo "numba tests skipped; the extra did not install"; exit 1; fi
 
@@ -151,7 +151,7 @@ jobs:
           PYTHONPATH: benchmarks
         run: |
           uv run python -c "
-          import bench_update, bench_batch, bench_vs_minisom, bench_vs_sompy
+          import bench_update, bench_vs_minisom, bench_vs_sompy
           print('benchmark scripts import OK')
           "
       - name: bench_vs_sompy degrades cleanly without its environment

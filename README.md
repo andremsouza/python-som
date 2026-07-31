@@ -140,7 +140,6 @@ Hand-run, never part of the test suite: a timing assertion on shared hardware me
 
 ```bash
 uv run python benchmarks/bench_vs_minisom.py   # vs MiniSom, agreement verified before timing
-uv run python benchmarks/bench_batch.py        # the neighborhood kernel against evaluating per node
 cd asv_benchmarks && uv run --extra bench asv continuous master HEAD   # this package across commits
 ```
 
