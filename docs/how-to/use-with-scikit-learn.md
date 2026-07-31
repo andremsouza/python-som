@@ -39,7 +39,7 @@ rows, columns = np.unravel_index(som.predict(X), som.get_shape())
 
 `winner(x)` still returns `(row, column)` for a single sample.
 
-## Two differences from scikit-learn worth knowing
+## Two differences from scikit-learn
 
 **`fit` continues rather than resetting.** scikit-learn estimators conventionally discard their
 fitted state on a second `fit`. This one does not: a SOM's models *are* its state, and `train` has

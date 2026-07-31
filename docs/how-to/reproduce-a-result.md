@@ -28,7 +28,7 @@ versions after it. A seed alone does not pin a result across an upgrade.
 python-som==0.7.0
 ```
 
-Two specific breaks worth knowing about, if you are reproducing an older figure:
+Three releases change results. If you are reproducing an older figure:
 
 - **0.3.0** replaced the global RNG with a per-instance generator, so `random_seed=42` gives a
   different map from 0.2.0 and earlier. Pin `python-som==0.2.0` to reproduce those.
@@ -51,7 +51,7 @@ print(som.last_report)
 ```
 TrainingReport(mode='batch', n_iteration=100, n_samples=150, random_seed=42,
                final_learning_rate=None, final_neighborhood_radius=0.5,
-               quantization_error=0.3142, python_som_version='0.4.0',
+               quantization_error=0.3142, python_som_version='0.7.0',
                numpy_version='2.5.1', wall_time_seconds=0.42)
 ```
 

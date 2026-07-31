@@ -61,8 +61,14 @@ requires.
 ## How the package enforces it
 
 Every neighborhood function is built from `squared_grid_distance`, which reduces the two offsets to
-one number before any profile is applied. The three shipped functions share a single implementation
-of each formula, so the per-node form and the batch kernel cannot drift apart.
+one number before any profile is applied.
+
+Batch training evaluates the same functions by a different route, contracting per-axis factors
+instead of calling them once per node. That is a contraction strategy rather than a second
+definition, and it is available only for the two neighborhoods where the factorisation is an
+identity. A test asserts the factors multiply back to the isotropic function node by node, so the
+two cannot drift apart, and the mexican hat has no factor at all. See
+[How batch training is computed](how-batch-training-is-computed.md).
 
 The test suite asserts the property directly rather than checking golden values: equal grid distance
 must give equal $h$. That assertion fails against the separable construction and passes against the
@@ -76,9 +82,9 @@ rather than a disc. Kohonen's phrasing ("up to a certain radius from the winner"
 so the two sources genuinely differ; this package follows Vrieze and says so rather than quietly
 picking one.
 
-The consequence is worth stating because it is easy to assume otherwise: on a large enough grid,
-nodes at equal Euclidean distance can fall on opposite sides of the boundary. The smallest case is a
-radius of $\sqrt{50}$, where $(5, 5)$ lies inside a $\sigma = 5$ square and $(7, 1)$ lies outside.
+A Chebyshev ball is not isotropic under the Euclidean metric. On a large enough grid, nodes at equal
+Euclidean distance can fall on opposite sides of the boundary: at a radius of $\sqrt{50}$, $(5, 5)$
+lies inside a $\sigma = 5$ square and $(7, 1)$ lies outside.
 
 ## Further reading
 

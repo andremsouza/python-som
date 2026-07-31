@@ -2,11 +2,10 @@
 
 Kohonen recommends starting the models on the plane of the data's two largest principal components
 rather than at random, because "much faster convergence follows" (Section 4.3). Computing those
-components is the only linear algebra this package needs, and how it is computed turned out to
-matter more than expected.
+components is the only linear algebra this package needs.
 
 Through 0.3.0 it was `sklearn.decomposition.PCA`. Since 0.4.0 it is about twenty lines of
-`np.linalg.svd`. The change removed a dependency and, unexpectedly, fixed a real accuracy defect.
+`np.linalg.svd`, which removed a dependency and also fixed an accuracy defect.
 
 ## Two ways to find the same components
 
@@ -57,10 +56,10 @@ scikit-learn remains a **test** dependency, and `tests/test_linalg_matches_sklea
 every fit both ways on every CI run and compares them. The claim under test is not "close enough"
 but "the same numbers": the tolerances are at the scale of double-precision round-off.
 
-The comparison is against `svd_solver="full"`, not against the default. That is deliberate, and the
-first version of the test got it wrong: it compared against `auto`, failed, and the *reference* was
-what was inaccurate. There is also a check against a `longdouble` reference, which depends on no
-library's solver choice and would survive scikit-learn changing its defaults again.
+The comparison is against `svd_solver="full"` rather than the default, because the default is the
+inaccurate path and comparing against it would fail a correct implementation. A second check uses a
+`longdouble` reference, which depends on no library's solver choice and would survive scikit-learn
+changing its defaults again.
 
 ## Two details that are easy to get wrong
 

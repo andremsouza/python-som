@@ -30,9 +30,8 @@ between two nodes, not of the two axis offsets separately. See
 
 ## What a custom strategy costs you
 
-One thing, and it is worth knowing before you commit: a callable cannot be written to a file without
-`pickle`, so `save_npz` records only its **name**. A map trained with your own function will not
-reload on its own.
+A callable cannot be written to a file without `pickle`, so `save_npz` records only its **name**. A
+map trained with your own function will not reload on its own.
 
 ```python
 python_som.SOM.load_npz("custom.npz")

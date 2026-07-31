@@ -1,8 +1,8 @@
 # Neighborhood functions
 
-The neighborhood function decides how a winner's correction spreads to the rest of the grid. It is
-the part of the SOM that turns vector quantization into a *topology-preserving* map, and the part
-where a plausible-looking implementation can be quietly wrong, so it is worth setting out in full.
+The neighborhood function decides how a winner's correction spreads to the rest of the grid. This
+page is the formulas and constants; [Why isotropy matters](../explanation/why-isotropy-matters.md)
+covers why they take the form they do.
 
 ## The rule that governs all of them
 
@@ -100,16 +100,10 @@ sometimes even better"* than a distance-dependent one.
 
 !!! note "The bubble uses the Chebyshev metric, so the region is a square"
 
-    A node is included when $\max(|dx|, |dy|) \le \rho$, which makes the region a square rather than
-    a disc. That follows Vrieze's appendix pseudo-code, which computes
-    `b = MAX(ABS(i - w_i), ABS(j - w_j))`, although Kohonen's phrase "up to a certain radius from the
-    winner" reads as Euclidean. The two sources genuinely differ, and this library keeps Vrieze's
-    reading so that existing results stay reproducible.
-
-    A consequence worth knowing, because it is easy to assume otherwise: **a Chebyshev ball is not
-    isotropic under the Euclidean metric**. Two nodes the same Euclidean distance from the winner can
-    fall on opposite sides of the boundary. The smallest case is $r = \sqrt{50}$, where $(5, 5)$ is
-    inside a $\sigma = 5$ square and $(7, 1)$ is outside.
+    A node is included when $\max(|dx|, |dy|) \le \rho$, following Vrieze's appendix pseudo-code,
+    `b = MAX(ABS(i - w_i), ABS(j - w_j))`. Kohonen's phrase "up to a certain radius from the winner"
+    reads as Euclidean, so the two sources differ; the consequences are in
+    [Why isotropy matters](../explanation/why-isotropy-matters.md).
 
 Unlike the other two, a radius of zero is allowed here: it selects the winner alone, which is well
 defined for an indicator function, where for the gaussian and the mexican hat it would be a division
