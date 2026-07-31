@@ -30,7 +30,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
     from ._core._protocols import BmuKernel
 
-__all__ = ["bmu_kernel"]
+__all__ = ["accelerated", "bmu_kernel"]
 
 
 @functools.cache
@@ -86,3 +86,18 @@ def bmu_kernel() -> BmuKernel | None:
 
     kernel: BmuKernel = fused_bmu  # pragma: no cover  only when numba is installed
     return kernel  # pragma: no cover
+
+
+def accelerated() -> bool:
+    """Whether training will use the compiled kernel.
+
+    True once numba is installed; nothing else is needed to enable it, and results are identical
+    either way.
+
+    **Calling this imports numba**, which takes about 80 ms the first time. It does not compile the
+    kernel: ``njit`` is lazy, so the roughly 500 ms compile happens on the first call that actually
+    trains. Both are paid once per process.
+
+    :return: True if the compiled kernel is available.
+    """
+    return bmu_kernel() is not None

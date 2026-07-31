@@ -177,3 +177,27 @@ def test_importing_the_package_does_not_import_numba() -> None:
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "clean" in result.stdout
+
+
+def test_accelerated_reports_true() -> None:
+    """The public predicate must agree with the kernel actually being there.
+
+    The False direction is in ``tests/test_core_boundary.py``, which runs in the environment without
+    numba. A predicate checked in only one direction would pass while always returning the same
+    answer.
+    """
+    assert python_som.accelerated() is True
+
+
+def test_asking_twice_does_not_resolve_twice() -> None:
+    """``bmu_kernel`` is cached, so repeated calls cost nothing after the first.
+
+    Without the cache, every ``accelerated()`` call would redefine the jitted function.
+    """
+    bmu_kernel()
+    before = bmu_kernel.cache_info()
+    python_som.accelerated()
+    python_som.accelerated()
+    after = bmu_kernel.cache_info()
+    assert after.misses == before.misses
+    assert after.hits >= before.hits + 2
