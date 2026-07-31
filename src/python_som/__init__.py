@@ -19,6 +19,7 @@ ISSN 0893-6080, https://doi.org/10.1016/j.neunet.2012.09.018
 
 from __future__ import annotations
 
+from ._accelerate import accelerated
 from ._artifact import ArtifactError, SOMConfig, TrainingReport
 from ._core._decay import (
     asymptotic_decay,
@@ -75,6 +76,7 @@ __all__ = [
     "TrainingReport",
     "WeightInit",
     "WeightInitStr",
+    "accelerated",
     "asymptotic_decay",
     "bubble",
     "euclidean_distance",

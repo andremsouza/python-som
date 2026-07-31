@@ -7,9 +7,11 @@ tolerance, or an in-place update, none of which a linter would catch on its own.
 from __future__ import annotations
 
 import ast
-import importlib
+import importlib.util
 import pathlib
 import pkgutil
+import subprocess
+import sys
 
 import numpy as np
 import pytest
@@ -259,11 +261,9 @@ def test_nothing_that_0_3_0_exported_has_been_removed() -> None:
 def test_the_public_surface_is_exactly_this() -> None:
     """Pin the whole surface, so growing it is a decision rather than an accident.
 
-    0.4.0 adds the enums and their ``Literal`` counterparts, the strategy protocols, and the
-    artifact types. All are additive: every existing call keeps working, and the enum members are
-    ``str`` subclasses that compare equal to the strings they replace. ``__version__`` is
-    deliberately absent -- it is re-exported with the ``as`` idiom, since ``__all__`` is the public
-    API and a dunder is not part of it.
+    Everything here is additive across 0.4.0 to 0.8.0 and every existing call keeps working.
+    ``__version__`` is deliberately absent: it is re-exported with the ``as`` idiom, and ``__all__``
+    is the public API where a dunder is not.
     """
     assert sorted(python_som.__all__) == [
         "ArtifactError",
@@ -284,6 +284,7 @@ def test_the_public_surface_is_exactly_this() -> None:
         "TrainingReport",
         "WeightInit",
         "WeightInitStr",
+        "accelerated",
         "asymptotic_decay",
         "bubble",
         "euclidean_distance",
@@ -431,3 +432,35 @@ def test_error_messages_never_leak_a_private_name(kwargs: dict[str, object], exp
     message = str(excinfo.value)
     assert "_init_" not in message, message
     assert "_som" not in message, message
+
+
+def test_accelerated_is_false_without_numba() -> None:
+    """The default install has no numba, so the predicate must say so.
+
+    The True direction is in ``tests/test_numba_kernel.py``, which only runs where numba is present.
+    Skipped rather than failed if numba happens to be installed here, so the two files cannot both
+    be wrong in the same direction.
+    """
+    if importlib.util.find_spec("numba") is not None:
+        pytest.skip("numba is installed; the True direction is asserted elsewhere")
+    assert python_som.accelerated() is False
+
+
+def test_asking_whether_it_is_accelerated_does_not_import_numba() -> None:
+    """``accelerated()`` is public now, so it is a new way to accidentally import numba eagerly.
+
+    A subprocess, because this one may already have imported it.
+    """
+    code = (
+        "import sys, python_som; "
+        "assert python_som.accelerated() in (True, False); "
+        "import importlib.util; "
+        "expected = importlib.util.find_spec('numba') is not None; "
+        "assert ('numba' in sys.modules) == expected, sys.modules.keys(); "
+        "print('clean')"
+    )
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "clean" in result.stdout
