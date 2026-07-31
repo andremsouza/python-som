@@ -25,6 +25,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 __all__ = [
     "AxisProfile",
+    "BmuKernel",
     "DecayFunction",
     "DistanceFunction",
     "KernelFunction",
@@ -89,6 +90,36 @@ class DistanceFunction(Protocol):
         :param x: Input vector.
         :param weights: One model, or an array of them.
         :return: Distances, with the leading shape of ``weights``.
+        """
+        ...
+
+
+@runtime_checkable
+class BmuKernel(Protocol):
+    """An accelerated best-matching-unit search, supplied from outside the core.
+
+    Optional throughout. ``python_som._accelerate`` provides one when the ``fast`` extra is
+    installed, and the NumPy path in :func:`~python_som._core._match.bmu_indices` runs otherwise.
+    Passed as an argument rather than imported, so the core stays numpy-only.
+
+    Both arrays arrive already shifted by a common vector. The caller owns that: subtracting a
+    common shift is exact in ``||x - w||`` and is what stops the expanded norm cancelling on data
+    far from the origin, so a kernel must not attempt it again.
+    """
+
+    def __call__(
+        self,
+        centred_data: npt.NDArray[np.floating],
+        centred_models: npt.NDArray[np.floating],
+        squared: npt.NDArray[np.floating],
+        /,
+    ) -> npt.NDArray[np.intp]:
+        """Return the index of the nearest model for each sample.
+
+        :param centred_data: Samples, shifted, of shape ``(n_samples, n_features)``.
+        :param centred_models: Models, shifted, of shape ``(n_nodes, n_features)``.
+        :param squared: Squared norm of each centred model.
+        :return: One flat node index per sample, ties going to the lowest index.
         """
         ...
 

@@ -15,7 +15,7 @@ from ._distance import euclidean_distance
 if TYPE_CHECKING:  # pragma: no cover
     import numpy.typing as npt
 
-    from ._protocols import DistanceFunction
+    from ._protocols import BmuKernel, DistanceFunction
 
 __all__ = ["accumulate", "activate", "bmu_indices", "quantization", "winner"]
 
@@ -85,7 +85,10 @@ def quantization(
 
 
 def bmu_indices(
-    data: npt.NDArray[Any], weights: npt.NDArray[Any], distance: DistanceFunction
+    data: npt.NDArray[Any],
+    weights: npt.NDArray[Any],
+    distance: DistanceFunction,
+    kernel: BmuKernel | None = None,
 ) -> npt.NDArray[np.intp]:
     """Return the flat index of the best-matching model for every sample.
 
@@ -111,6 +114,8 @@ def bmu_indices(
     :param data: Dataset of shape ``(n_samples, n_features)``.
     :param weights: Models, of shape ``(x, y, n_features)``.
     :param distance: Dissimilarity measure.
+    :param kernel: Optional accelerated search, from ``python_som._accelerate``. Passed in rather
+        than imported, so this module stays numpy-only.
     :return: One flat node index per sample.
     """
     flat = weights.reshape(-1, weights.shape[-1])
@@ -120,6 +125,9 @@ def bmu_indices(
     shift = flat.mean(axis=0)
     centred = flat - shift
     squared = np.einsum("nf,nf->n", centred, centred)
+
+    if kernel is not None:  # pragma: no cover  reached only with the `fast` extra
+        return kernel(data - shift, centred, squared)
 
     n_nodes = len(flat)
     chunk = max(1, _SCORE_BUDGET_BYTES // (n_nodes * 8))
@@ -141,6 +149,7 @@ def accumulate(
     weights: npt.NDArray[Any],
     shape: tuple[int, int],
     distance: DistanceFunction,
+    kernel: BmuKernel | None = None,
 ) -> tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
     """Sum the samples mapped to each node, and count them.
 
@@ -151,9 +160,10 @@ def accumulate(
     :param weights: Models, of shape ``(x, y, n_features)``.
     :param shape: Shape of the grid.
     :param distance: Dissimilarity measure.
+    :param kernel: Optional accelerated search; see :func:`bmu_indices`.
     :return: Per-node sums of shape ``(x, y, n_features)`` and counts of shape ``(x, y)``.
     """
-    nodes = bmu_indices(data, weights, distance)
+    nodes = bmu_indices(data, weights, distance, kernel)
     n_nodes = shape[0] * shape[1]
     sums = np.zeros((n_nodes, weights.shape[-1]))
     np.add.at(sums, nodes, data)

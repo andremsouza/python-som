@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 import numpy as np
 import numpy.typing as npt
 
+from ._accelerate import bmu_kernel
 from ._artifact import (
     ArtifactError,
     SOMConfig,
@@ -580,7 +581,7 @@ class SOM:
         :param X: Dataset of shape ``(n_samples, n_features)``.
         :return: One flat node index per sample.
         """
-        return bmu_indices(to_numpy(X), self._weights, self._distance_function)
+        return bmu_indices(to_numpy(X), self._weights, self._distance_function, bmu_kernel())
 
     def score(self, X: DataLike, y: object = None) -> float:  # noqa: ARG002, N803
         """Return the negated quantization error, so that larger is better.
@@ -901,7 +902,9 @@ class SOM:
         sigma = self._neighborhood_radius
         for t in self._progress(range(n_iteration), n_iteration, verbose=verbose):
             sigma = self._sigma(t, n_iteration)
-            sums, counts = accumulate(array, self._weights, self._shape, self._distance_function)
+            sums, counts = accumulate(
+                array, self._weights, self._shape, self._distance_function, bmu_kernel()
+            )
             hx = axis_matrix(self._shape[0], sigma, cyclic=self._cyclic[0], profile=profile)
             hy = axis_matrix(self._shape[1], sigma, cyclic=self._cyclic[1], profile=profile)
             self._weights = batch_update(self._weights, sums, counts, hx, hy)

@@ -133,6 +133,12 @@ analysis = [
 sklearn = [
     "scikit-learn>=1.4",
 ]
+# Optional numba kernel for the best-matching-unit search: 1.2x to 2.4x on batch training. An extra
+# rather than a dependency because numba requires numpy<2.5 while this package tests against 2.5,
+# so installing it caps NumPy. That constraint reaches only someone who opts in.
+fast = [
+    "numba>=0.66",
+]
 examples = [
     "matplotlib>=3.8",
     "pandas>=2.0",
@@ -232,7 +238,7 @@ warn_unreachable = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 
 [[tool.mypy.overrides]]
-module = ["sklearn.*"]
+module = ["sklearn.*", "numba.*"]
 ignore_missing_imports = true
 
 # scikit-learn ships no py.typed, so mypy sees BaseEstimator as Any and --strict refuses to subclass
@@ -242,6 +248,13 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["python_som.sklearn"]
 disallow_subclassing_any = false
+
+# numba ships no py.typed, so `njit` is Any and --strict rejects the decorated function as untyped.
+# Relaxed for the accelerator alone; the kernel's contract is the BmuKernel protocol, and a
+# differential test asserts it returns what the NumPy path returns.
+[[tool.mypy.overrides]]
+module = ["python_som._accelerate"]
+disallow_untyped_decorators = false
 
 [tool.pytest.ini_options]
 minversion = "8.0"
