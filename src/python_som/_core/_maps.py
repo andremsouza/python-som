@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from ._match import winner
+from ._match import bmu_indices, winner
 from ._neighborhood import bubble
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -105,8 +105,9 @@ def winner_map(
     result: dict[tuple[int, int], list[npt.NDArray[Any]]] = {
         (int(i), int(j)): [] for i, j in np.ndindex(shape)
     }
-    for sample in data:
-        result[winner(sample, weights, distance)].append(sample)
+    rows, columns = np.unravel_index(bmu_indices(data, weights, distance), shape)
+    for sample, row, column in zip(data, rows, columns, strict=True):
+        result[int(row), int(column)].append(sample)
     return result
 
 
@@ -136,6 +137,7 @@ def label_map(
     counts: dict[tuple[int, int], Counter[Any]] = {
         (int(i), int(j)): Counter() for i, j in np.ndindex(shape)
     }
-    for sample, label in zip(data, labels, strict=True):
-        counts[winner(sample, weights, distance)].update([label])
+    rows, columns = np.unravel_index(bmu_indices(data, weights, distance), shape)
+    for label, row, column in zip(labels, rows, columns, strict=True):
+        counts[int(row), int(column)].update([label])
     return counts

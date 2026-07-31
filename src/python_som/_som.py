@@ -36,7 +36,7 @@ from ._core._distance import euclidean_distance
 from ._core._initialize import linear_models, random_models, sample_models
 from ._core._linalg import auto_dimensions
 from ._core._maps import activation_matrix, label_map, u_matrix, winner_map
-from ._core._match import accumulate, activate, quantization, winner
+from ._core._match import accumulate, activate, bmu_indices, quantization, winner
 from ._core._neighborhood import (
     SIGNED_NEIGHBORHOODS,
     axis_matrix,
@@ -580,11 +580,7 @@ class SOM:
         :param X: Dataset of shape ``(n_samples, n_features)``.
         :return: One flat node index per sample.
         """
-        array = to_numpy(X)
-        shape = self._shape
-        return np.array(
-            [np.ravel_multi_index(self.winner(sample), shape) for sample in array], dtype=int
-        )
+        return bmu_indices(to_numpy(X), self._weights, self._distance_function)
 
     def score(self, X: DataLike, y: object = None) -> float:  # noqa: ARG002, N803
         """Return the negated quantization error, so that larger is better.
