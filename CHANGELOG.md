@@ -5,6 +5,43 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-07-31
+
+0.7.0 shipped optional numba acceleration that a user had no way to find or to check. This makes it
+discoverable and adds one public function to inspect it. No behaviour changes and no numerical
+changes.
+
+### Added
+
+- **`python_som.accelerated()`**, which reports whether training will use the compiled kernel:
+
+  ```python
+  import python_som
+
+  python_som.accelerated()  # True once numba is installed
+  ```
+
+  A function rather than a constant because a constant would have to resolve at import time, which
+  forces the numba import on every `import python_som`. That import costs about 80 ms, and 0.7.0
+  deferred it deliberately; a function defers it to the caller who asked. Named for the capability
+  rather than the backend, so a future change of backend is not a rename.
+
+  Calling it imports numba but does not compile the kernel: `njit` is lazy, so the roughly 500 ms
+  compile happens on the first call that trains.
+
+- **[Speed up training](https://andremsouza.github.io/python-som/how-to/speed-up-training/)**, a
+  how-to covering the four levers in order of effect: batch mode, the default distance function,
+  numba, and map size.
+
+### Fixed
+
+- **The numba acceleration is now findable.** 0.7.0's Install section listed four `pip install`
+  lines and numba was not among them; the only user-facing mention was one bullet in the feature
+  list, and the documentation site mentioned numba just once, in a caveat about MiniSom. A published
+  PyPI description cannot be edited, so correcting it takes a release. The README's Install section
+  now carries the command, its NumPy consequence, and a link to the how-to, and a packaging test
+  asserts that section of the built metadata rather than the description as a whole.
+
 ## [0.7.0] - 2026-07-31
 
 Batch training is 20x to 40x faster and now beats both comparable libraries by a wide margin. The

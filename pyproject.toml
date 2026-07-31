@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "python-som"
-version = "0.7.0"
+version = "0.8.0"
 authors = [{ name = "André Moreira Souza", email = "msouza.andre@hotmail.com" }]
 description = "Python implementation of the Self-Organizing Map"
 readme = "README.md"
