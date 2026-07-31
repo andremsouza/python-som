@@ -117,16 +117,23 @@ def run_pure(case: Case) -> npt.NDArray[np.floating]:
     return weights
 
 
-def compare(first: Callable[[], object], second: Callable[[], object]) -> tuple[float, float, bool]:
+def compare(
+    first: Callable[[], object], second: Callable[[], object], repeats: int = REPEATS
+) -> tuple[float, float, bool]:
     """Time two callables with their repeats interleaved.
+
+    Also used by ``bench_vs_minisom.py``, which is why ``repeats`` is a parameter: a cross-library
+    case trains a whole map per repeat, so it cannot afford the 31 this script uses for a single
+    update step. Everything else about the method is deliberately shared rather than reimplemented.
 
     :param first: One arm.
     :param second: The other arm.
+    :param repeats: Number of interleaved repeats. Keep it odd, so the median is an observation.
     :return: Median of each, and whether their interquartile ranges overlap.
     """
     first_times: list[float] = []
     second_times: list[float] = []
-    for _ in range(REPEATS):
+    for _ in range(repeats):
         first_times.append(timeit.timeit(first, number=1))
         second_times.append(timeit.timeit(second, number=1))
 

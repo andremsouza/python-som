@@ -109,6 +109,17 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+# Built by hand for benchmarks/bench_vs_sompy.py. SOMPY cannot be installed alongside this package,
+# because it uses np.Inf and so cannot be imported on NumPy 2, so it gets an interpreter of its own.
+.venv-sompy/
+
+# Everything airspeed velocity generates: environments, results and the rendered site.
+#
+# Two reasons, and the second is the stronger one. Results are per-machine, so a database from one
+# laptop tells nobody anything about another. And `asv machine` records the host's name, CPU model,
+# core count, RAM and kernel version into .asv/results/<machine>/machine.json, which is a hardware
+# fingerprint of whoever ran it and has no business in a public repository.
+.asv/
 
 # Spyder project settings
 .spyderproject

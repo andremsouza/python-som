@@ -5,6 +5,44 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Nothing in the shipped package changed. This is benchmarking and the tests behind it.
+
+### Added
+
+- **A published comparison against MiniSom and SOMPY**, at
+  [Comparison with MiniSom and SOMPY](https://andremsouza.github.io/python-som/explanation/comparison-with-som-libraries/).
+  Both peers implement Kohonen's Eq. (8) and cite the same sources this package works from, so the
+  comparison is between three implementations of one published algorithm rather than between three
+  different algorithms. Getting there needed eight controls, because the packages look far more
+  interchangeable than they are: MiniSom's `train_batch` is stepwise training rather than batch,
+  only the gaussian is the same function in all three, and SOMPY's
+  `calculate_quantization_error` returns an elementwise mean absolute error rather than the usual
+  mean Euclidean distance.
+
+  Measured on batch training, this package is 1.3x to 2.0x faster than SOMPY and 1.3x to 1.6x
+  **slower** than MiniSom, the latter growing with map size. `batch_update` walks every node in
+  Python, 108,000 `einsum` calls on a 60x60 map over 30 iterations, where MiniSom's node-side update
+  is a single vectorised divide. Stepwise training is within 10% of MiniSom's.
+
+- **`tests/test_minisom_agreement.py`**, which checks the neighborhood functions, the decay, the
+  best-matching-unit search and both training loops against MiniSom on every run. Trained models
+  agree to 2.8e-16 relative for stepwise and 1.3e-15 for batch, which is what makes timing the two
+  against each other meaningful. It also pins the two neighborhoods that deliberately *disagree*, so
+  neither is later "fixed" into the other. Same reasoning as
+  `tests/test_linalg_matches_sklearn.py`, which once found a real 5.8% defect in this package.
+
+- **An asv suite in `asv_benchmarks/`** tracking this package against its own git history, which is
+  what numpy, scipy, pandas and scikit-learn all use asv for. Sixteen benchmarks over the training
+  loops, the neighborhood kernel, the matching functions, the SVD and the artifact round trip. No
+  timing gates anything: CI executes each benchmark once and discards the numbers, because a shared
+  runner cannot measure anything.
+
+- **A `bench` extra** holding `asv` and `minisom`, kept out of `dev` because no gating job needs
+  them. SOMPY is deliberately absent and cannot be added: it uses `np.Inf`, removed in NumPy 2.0, at
+  class-definition time, so it gets an interpreter of its own that is built by hand.
+
 ## [0.6.1] - 2026-07-30
 
 ### Fixed
@@ -20,8 +58,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The upgrade notes were also short of two things worth knowing. 0.4.0 changes
   linear-initialization results for data far from the origin, where the previous PCA path was wrong
   by up to 5.8%, and it removed pandas and scikit-learn as runtime dependencies, which matters to
-  anyone who was importing either transitively. Both are now in the README, alongside a note that 0.5.0's
-  string deprecation was withdrawn so anyone who saw the warning knows to stop migrating.
+  anyone who was importing either transitively. Both are now in the README, alongside a note that
+  0.5.0's string deprecation was withdrawn so anyone who saw the warning knows to stop migrating.
 
 ## [0.6.0] - 2026-07-30
 

@@ -60,6 +60,50 @@ jobs:
       - name: pytest
         run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
 
+  benchmarks:
+    name: benchmarks still run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - run: uv sync --extra dev --extra bench
+
+      # Timings are deliberately NOT asserted on. A shared runner cannot measure anything: an
+      # earlier version of benchmarks/bench_vs_minisom.py swung a comparison from 2.56x to 1.01x
+      # between two runs on an *idle* machine. What this job protects is that the benchmark code
+      # still imports and executes, which is the thing that rots silently while nobody runs it.
+      #
+      # asv has no `check` subcommand, so the way to execute every benchmark once and record
+      # nothing is `run --quick --dry-run`. `--python=same` reuses this environment instead of
+      # building a wheel per revision. `asv machine --yes` is required first: without a machine
+      # profile asv exits 1 before running anything.
+      - name: every asv benchmark executes once
+        working-directory: asv_benchmarks
+        run: |
+          uv run --extra bench asv machine --yes
+          uv run --extra bench asv run --python=same --quick --dry-run
+
+      # The cross-library scripts are not run here. bench_vs_minisom.py trains real maps and takes
+      # minutes, and bench_vs_sompy.py needs an interpreter this environment cannot provide. Their
+      # correctness claims are covered by tests/test_minisom_agreement.py, which does run in CI.
+      # PYTHONPATH rather than sys.path.insert with a relative path, which silently resolves
+      # against whatever directory the step happens to start in.
+      - name: the comparison harnesses still import
+        env:
+          PYTHONPATH: benchmarks
+        run: |
+          uv run python -c "
+          import bench_update, bench_batch, bench_vs_minisom, bench_vs_sompy
+          print('benchmark scripts import OK')
+          "
+      - name: bench_vs_sompy degrades cleanly without its environment
+        run: |
+          test ! -d .venv-sompy
+          uv run python benchmarks/bench_vs_sompy.py | grep -q "uv venv .venv-sompy"
+
   build:
     name: build and verify the distribution
     runs-on: ubuntu-latest

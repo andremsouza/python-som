@@ -1,0 +1,78 @@
+name: benchmarks
+
+# Manual only, and that is the point rather than an omission.
+#
+# asv measures a project against its own git history, and its numbers mean something only as a
+# trend on one consistent machine. GitHub's shared runners are not that: an earlier version of
+# benchmarks/bench_vs_minisom.py swung a comparison from 2.56x to 1.01x between two runs on an idle
+# laptop, and a shared runner is considerably worse than an idle laptop. So nothing here runs on
+# push, nothing gates a merge, and the results are an artifact to read rather than a check to pass.
+#
+# What DOES run on every push is the smoke step in ci.yml, which executes each benchmark once and
+# discards the timings. That catches the failure this file cannot: benchmark code rotting unnoticed
+# because nobody runs it.
+#
+# For numbers worth quoting, run it locally on a quiet machine:
+#
+#   cd asv_benchmarks
+#   uv run --extra bench asv machine --yes
+#   uv run --extra bench asv continuous master HEAD
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "Commit, tag or branch to compare against"
+        required: true
+        default: master
+      head:
+        description: "Commit, tag or branch to measure"
+        required: true
+        default: HEAD
+      factor:
+        description: "Ratio a change must exceed to be reported"
+        required: false
+        default: "1.1"
+
+# Actions are pinned by commit SHA rather than by tag: a tag can be moved to point at new code,
+# a SHA cannot. Dependabot keeps them current.
+permissions:
+  contents: read
+
+jobs:
+  asv:
+    name: asv continuous ${{ inputs.base }}..${{ inputs.head }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # asv builds and installs each revision it is asked about, so it needs the history that
+          # a default shallow clone does not fetch.
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - run: uv sync --extra bench
+
+      - name: register the runner
+        working-directory: asv_benchmarks
+        run: uv run --extra bench asv machine --yes
+
+      # `|| true` because `asv continuous` exits non-zero when it finds a regression, and a
+      # regression is the result this job exists to surface rather than a reason to fail it. The
+      # numbers are in the artifact either way; a human reads them and decides.
+      - name: compare the two revisions
+        working-directory: asv_benchmarks
+        run: |
+          uv run --extra bench asv continuous \
+            --factor "${{ inputs.factor }}" \
+            "${{ inputs.base }}" "${{ inputs.head }}" | tee ../asv-comparison.txt || true
+
+      # The comparison text only. `.asv/results/` also contains machine.json, which records the
+      # host's name, CPU model, core count, RAM and kernel version. That is a hardware fingerprint,
+      # it is useless to anyone reading the comparison, and a downloadable artifact is a poor place
+      # to keep it even when the host is an ephemeral runner.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: asv-comparison
+          path: asv-comparison.txt
