@@ -1,0 +1,41 @@
+{
+    // airspeed velocity configuration. This tracks python-som against its OWN git history; the
+    // cross-library comparisons live in benchmarks/ and are a different question with a different
+    // tool. numpy, scipy, pandas and scikit-learn all use asv for exactly this.
+    //
+    // Modelled on numpy's, which is the closer fit of the four since this is a pure-Python wheel.
+    // The directory is named after scikit-learn's so it cannot be confused with benchmarks/, which
+    // holds hand-run scripts rather than an asv suite.
+    //
+    //   uv run --extra bench asv run                  # benchmark the working tree
+    //   uv run --extra bench asv continuous master HEAD   # compare two commits
+    //   uv run --extra bench asv publish && asv preview   # render the results
+    //
+    // Results are per-machine and are NOT committed: a database from one laptop says nothing about
+    // anyone else's, and .asv/ is gitignored for that reason.
+    "version": 1,
+    "project": "python-som",
+    "project_url": "https://andremsouza.github.io/python-som/",
+    "repo": "..",
+    "branches": ["master"],
+    "dvcs": "git",
+    "environment_type": "virtualenv",
+    "show_commit_url": "https://github.com/andremsouza/python-som/commit/",
+    "build_command": [
+        "python -m build --wheel -o {build_cache_dir} {build_dir}"
+    ],
+    "install_command": ["python -mpip install {wheel_file}"],
+    "uninstall_command": ["return-code=any python -mpip uninstall -y {project}"],
+    "benchmark_dir": "benchmarks",
+    // Everything asv generates lives under one gitignored directory rather than four.
+    "env_dir": "../.asv/env",
+    "results_dir": "../.asv/results",
+    "html_dir": "../.asv/html",
+    // NumPy is the only runtime dependency, so an empty list means "whatever resolves", which is
+    // what a library wanting to notice an upstream regression should track.
+    "matrix": {
+        "req": {
+            "numpy": []
+        }
+    }
+}

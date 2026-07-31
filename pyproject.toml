@@ -102,6 +102,21 @@ docs = [
 # nothing in `src/`, and this is a pure-numpy library with no network, auth, crypto, SQL or
 # templating, which is most of what semgrep's rulesets look for. Low coverage gained for three CVEs
 # that cannot be patched. Revisit if semgrep relaxes the pin.
+# Benchmarking, kept out of `dev` for the same reason `analysis` is: `asv` pulls about ten
+# transitive packages (asv-runner, json5, build, tabulate, virtualenv, packaging,
+# importlib-metadata, pyyaml, pympler) and no gating CI job runs it. `minisom` is repeated here so
+# that `--extra bench` alone is enough to run every script in benchmarks/.
+#
+# SOMPY is deliberately absent and cannot be added. It uses `np.Inf`, removed in NumPy 2.0, at
+# class-definition time, so it cannot be imported in any environment this package supports.
+# `benchmarks/bench_vs_sompy.py` drives it through a separate interpreter instead; that environment
+# is built by hand and the command is in the script's docstring.
+bench = [
+    # airspeed velocity, from the airspeed-velocity organisation: 22 releases since 2015-05-01,
+    # and the tool numpy, scipy, pandas and scikit-learn all use to track their own performance.
+    "asv==0.6.6",
+    "minisom==2.3.6",
+]
 analysis = [
     # PyCQA, first released 2015. Security-oriented AST checks.
     "bandit==1.9.4",
