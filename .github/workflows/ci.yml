@@ -60,6 +60,62 @@ jobs:
       - name: pytest
         run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
 
+  fast-extra:
+    name: the accelerated path
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      # numba is NOT a declared extra of this package, deliberately: uv resolves every extra into
+      # one lockfile, so declaring it would cap NumPy below 2.5 for the whole project and the test
+      # matrix would then run against an older NumPy than the package releases against. It is
+      # installed ad hoc here instead, which is also how a user installs it.
+      - run: uv sync --extra dev
+
+      # These must PASS, not skip. tests/test_numba_kernel.py is guarded by numba being importable,
+      # so without this job it would skip everywhere and the second implementation of the hottest
+      # code in the package would go unchecked.
+      - name: the differential tests run rather than skip
+        run: |
+          uv run --with "numba<0.67" pytest tests/test_numba_kernel.py -v --no-header | tee result.txt
+          grep -q PASSED result.txt
+          if grep -q SKIPPED result.txt; then echo "numba tests skipped; numba did not install"; exit 1; fi
+
+      - name: the whole suite still passes with numba present
+        run: uv run --with "numba<0.67" pytest -q
+
+  no-extras:
+    name: numpy only, no extras
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      # The claim the package leads with, checked rather than asserted: a plain install pulls NumPy
+      # and nothing else, and it resolves the *current* NumPy rather than the one numba caps us to.
+      - name: a plain install is numpy and nothing else
+        run: |
+          uv venv /tmp/plain
+          VIRTUAL_ENV=/tmp/plain uv pip install .
+          VIRTUAL_ENV=/tmp/plain uv pip list --format=freeze | grep -v '^python-som==' > installed.txt
+          cat installed.txt
+          test "$(wc -l < installed.txt)" -eq 1
+          grep -q '^numpy==2\.' installed.txt
+          /tmp/plain/bin/python -c "
+          import sys, numpy as np, python_som
+          som = python_som.SOM(x=8, y=8, input_len=3, random_seed=0)
+          som.train(np.random.default_rng(0).normal(size=(30, 3)), n_iteration=5, mode='batch')
+          assert 'numba' not in sys.modules
+          print('numpy-only install OK, numpy', np.__version__)
+          "
+
   benchmarks:
     name: benchmarks still run
     runs-on: ubuntu-latest
@@ -96,7 +152,7 @@ jobs:
           PYTHONPATH: benchmarks
         run: |
           uv run python -c "
-          import bench_update, bench_batch, bench_vs_minisom, bench_vs_sompy
+          import bench_update, bench_vs_minisom, bench_vs_sompy
           print('benchmark scripts import OK')
           "
       - name: bench_vs_sompy degrades cleanly without its environment

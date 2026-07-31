@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "python-som"
-version = "0.6.1"
+version = "0.7.0"
 authors = [{ name = "André Moreira Souza", email = "msouza.andre@hotmail.com" }]
 description = "Python implementation of the Self-Organizing Map"
 readme = "README.md"
@@ -26,13 +26,9 @@ classifiers = [
     "Operating System :: OS Independent",
     "Typing :: Typed",
 ]
-# NumPy is the only thing this package needs at runtime. pandas and scikit-learn were dropped in
-# 0.4.0: pandas because `np.asarray` already converts a DataFrame through the `__array__` protocol,
-# and scikit-learn because its PCA and StandardScaler are twenty lines of `np.linalg.svd`. Together
-# together they pulled in 8 further packages to reach that. Measured on Linux/CPython 3.12, the
-# installed footprint drops from 333 MB across 10 packages to 69 MB across 1: a 264 MB reduction,
-# 79% of the payload. Both remain in
-# `dev`, where the differential tests re-check the replacements against them on every CI run.
+# NumPy is the only runtime dependency. pandas and scikit-learn were dropped in 0.4.0, taking the
+# install from 333 MB across 10 packages to 69 MB across 1. Both stay in `dev`, where differential
+# tests re-check the replacements against them.
 dependencies = [
     "numpy>=1.24",
 ]
@@ -41,25 +37,18 @@ dependencies = [
 cli = ["tqdm>=4.66"]
 dev = [
     "hypothesis==6.163.0",
-    # Not a runtime dependency. tests/test_minisom_agreement.py checks our neighborhood functions,
-    # decay and training loops against MiniSom's, the closest comparable implementation, the same way
-    # tests/test_linalg_matches_sklearn.py checks our PCA against scikit-learn's. Two independent
-    # implementations of Kohonen's equations agreeing is worth more than either one's own tests.
-    # Cheap to depend on: MIT, a single minisom.py, and it declares no dependencies of its own.
+    # Test-only. tests/test_minisom_agreement.py checks this package's equations against MiniSom's.
+    # MIT, a single file, and it declares no dependencies of its own.
     "minisom==2.3.6",
     "mypy==2.3.0",
-    # Not runtime dependencies. The suite exercises the DataFrame path through the port, and
-    # tests/test_linalg_matches_sklearn.py re-derives every PCA both ways and compares. Pinned like
-    # the rest of the tooling: scikit-learn changed its default PCA solver in 1.5, and a floating pin
-    # would surface that as an unrelated PR's CI failure instead of a Dependabot diff to read.
-    # Split by Python version because the current majors dropped 3.10, which this package still
-    # supports: same reason as tomli below, same pattern.
+    # Test-only: the DataFrame path through the port, and the differential PCA test. Pinned because
+    # scikit-learn changed its default PCA solver in 1.5, and a floating pin would surface that as
+    # an unrelated PR's CI failure. Split by Python version, since the current majors dropped 3.10.
     "pandas==3.0.5; python_version >= '3.11'",
     "pandas==2.3.3; python_version < '3.11'",
     "scikit-learn==1.9.0; python_version >= '3.11'",
     "scikit-learn==1.7.2; python_version < '3.11'",
-    # pandas-stubs 3.x needs Python >=3.11; it is dev-only, so gate it rather than
-    # raising the library's own floor. mypy runs on 3.12 in CI, where it is present.
+    # pandas-stubs 3.x needs Python >=3.11; gated rather than raising the library's floor.
     "pandas-stubs==3.0.3.260530; python_version >= '3.11'",
     "pre-commit==4.6.1",
     "pytest==9.1.1",
@@ -72,48 +61,30 @@ dev = [
 ]
 docs = [
     "mkdocs-material==9.7.7",
-    # Pinned to 1.2.2 deliberately, not to the latest 1.2.3. The canonical repository,
-    # github.com/mkdocs/mkdocs-redirects (245 stars, active, not archived), has tags up to v1.2.2 and
-    # no v1.2.3. PyPI's 1.2.3 was published on 2026-03-28 declaring its source as
-    # github.com/ProperDocs/properdocs-redirects, a repository created 2026-03-14 with 3 stars -- a
-    # version upstream never tagged, released from a repository that appeared two weeks earlier while
-    # the original stayed active. 1.2.2's declared source is the canonical repository and matches its
-    # own v1.2.2 tag, so that is the last release whose provenance can be checked.
-    #
-    # Do not bump this without re-checking who publishes it.
+    # SUPPLY CHAIN: pinned to 1.2.2, not the newer 1.2.3. Upstream (github.com/mkdocs/mkdocs-
+    # redirects) has no v1.2.3 tag; PyPI's 1.2.3 declares its source as a different repository
+    # created two weeks before it was published. 1.2.2 is the last release whose provenance checks
+    # out. Do not bump without re-checking who publishes it.
     "mkdocs-redirects==1.2.2",
     "mkdocstrings-python==2.0.5",
 ]
-# Static analysis used during review, kept out of `dev` so the CI jobs that never run it do not
-# install it. Pinned exactly, like the rest of the tooling. Nothing here gates a merge: ruff and mypy
-# are the enforced checks, and these are for the deeper passes a human asks for.
+# Review tools, kept out of `dev` so CI jobs that never run them do not install them. Nothing here
+# gates a merge; ruff and mypy are the enforced checks.
 #
-# `osv-scanner` is deliberately absent. The real tool is a Go binary from Google; the PyPI package of
-# that name was registered on 2026-07-16 with one release, no author, no home page, and a summary of
-# "Reserved name placeholder. No functionality." Install the Go binary if you want it.
+# SUPPLY CHAIN, three tools deliberately absent:
+#   osv-scanner  the PyPI package of that name is a placeholder with no functionality; the real
+#                tool is a Go binary from Google.
+#   guarddog     genuine (DataDog) but first released three months after this project, so it fails
+#                the rule that a dependency should predate what it is added to.
+#   semgrep      pins mcp==1.23.3 exactly, which carries PYSEC-2026-3481/3482/3483 and so cannot be
+#                remediated from here. Revisit if it relaxes the pin.
+# Benchmarking, kept out of `dev`: asv pulls about ten transitive packages and no gating job runs
+# it. minisom is repeated so `--extra bench` alone runs every script in benchmarks/.
 #
-# `guarddog` is also absent: genuine (DataDog) but first released 2022-11-28, three months *after*
-# this project, so it fails the rule that a dependency should predate what it is added to. Add it
-# deliberately if the supply-chain checks are wanted, not as part of a batch.
-#
-# `semgrep` was added and then removed. It pins `mcp==1.23.3` exactly, and that version carries
-# PYSEC-2026-3481/3482/3483 (fixed in mcp 1.27.2/1.28.1) -- so the exact pin makes the advisories
-# unremediable from here, and 1.172.0 is already the latest semgrep. Against that, bandit reports
-# nothing in `src/`, and this is a pure-numpy library with no network, auth, crypto, SQL or
-# templating, which is most of what semgrep's rulesets look for. Low coverage gained for three CVEs
-# that cannot be patched. Revisit if semgrep relaxes the pin.
-# Benchmarking, kept out of `dev` for the same reason `analysis` is: `asv` pulls about ten
-# transitive packages (asv-runner, json5, build, tabulate, virtualenv, packaging,
-# importlib-metadata, pyyaml, pympler) and no gating CI job runs it. `minisom` is repeated here so
-# that `--extra bench` alone is enough to run every script in benchmarks/.
-#
-# SOMPY is deliberately absent and cannot be added. It uses `np.Inf`, removed in NumPy 2.0, at
-# class-definition time, so it cannot be imported in any environment this package supports.
-# `benchmarks/bench_vs_sompy.py` drives it through a separate interpreter instead; that environment
-# is built by hand and the command is in the script's docstring.
+# SOMPY cannot be added: it uses `np.Inf`, removed in NumPy 2.0, at class-definition time.
+# benchmarks/bench_vs_sompy.py drives it through a separate interpreter built by hand.
 bench = [
-    # airspeed velocity, from the airspeed-velocity organisation: 22 releases since 2015-05-01,
-    # and the tool numpy, scipy, pandas and scikit-learn all use to track their own performance.
+    # What numpy, scipy, pandas and scikit-learn all use to track their own performance.
     "asv==0.6.6",
     "minisom==2.3.6",
 ]
@@ -126,10 +97,8 @@ analysis = [
     # reports can be reproduced from the command line.
     "pylint==4.0.6",
 ]
-# Restores the install set that 0.3.0 pulled in by default, for anyone who was relying on it.
-# scikit-learn integration. The core never imports it; only python_som.sklearn does, and that module
-# exists because these paths need `__sklearn_tags__`, which in practice means inheriting BaseEstimator.
-# A lower bound rather than a pin: this is a user-facing install set, not tooling.
+# scikit-learn integration. Only python_som.sklearn imports it. Lower bounds rather than pins:
+# these are user-facing install sets, not tooling. `examples` restores what 0.3.0 installed.
 sklearn = [
     "scikit-learn>=1.4",
 ]
@@ -187,9 +156,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Tests must be able to build a DataFrame to exercise the port, and to compare our PCA against
-# sklearn's differentially. The ban protects the core, not the suite that checks it.
-# The scikit-learn adapter is the module that exists to import scikit-learn.
+# The ban protects the core, not the suite that checks it, nor the adapter that exists to import
+# scikit-learn.
 "src/python_som/sklearn.py" = ["TID251"]
 "tests/test_sklearn_adapter.py" = ["TID251"]
 "tests/*" = [
@@ -205,14 +173,12 @@ ignore = [
     "PLR2004",
 ]
 "examples/*" = ["INP001", "T201", "D100"]
-# Scripts a human runs, not importable modules: a table on stdout is the deliverable, and neither
-# directory should become a package just to satisfy the implicit-namespace rule.
+# Scripts a human runs: a table on stdout is the deliverable, and they are not importable modules.
 "benchmarks/*" = ["INP001", "T201"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
-# The package is numpy-only at runtime, and as of 0.4.0 this ban has no per-file exemption anywhere
-# under src/: the two modules that used to need one no longer import either library. Only tests are
-# exempt, so the replacements can be compared against the originals.
+# The package is numpy-only at runtime. No module under src/ is exempt; only tests are, so the
+# replacements can be compared against the originals.
 "pandas".msg = "The core is numpy-only. Convert at the boundary in python_som/_convert.py."
 "sklearn".msg = "The core is numpy-only. Linear algebra belongs in python_som/_core/_linalg.py."
 
@@ -223,25 +189,31 @@ convention = "pep257"
 known-first-party = ["python_som"]
 
 [tool.mypy]
-# Deliberately not pinned to python_version = "3.10". NumPy's bundled stubs use 3.12 syntax, and
-# `tomllib` is 3.11+, so pinning to the floor makes mypy fail on the dependencies rather than on
-# our code. Real 3.10 compatibility is covered by the CI test matrix instead.
+# Not pinned to 3.10: NumPy's stubs use 3.12 syntax, so pinning to the floor makes mypy fail on the
+# dependencies rather than on our code. Real 3.10 support is covered by the CI matrix.
 strict = true
 files = ["src", "tests"]
 warn_unreachable = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 
 [[tool.mypy.overrides]]
-module = ["sklearn.*"]
+module = ["sklearn.*", "numba.*"]
 ignore_missing_imports = true
 
-# scikit-learn ships no py.typed, so mypy sees BaseEstimator as Any and --strict refuses to subclass
-# it. Relaxed for the adapter module alone, which is the only place that inherits from scikit-learn;
-# everything else stays under full strictness. The alternative, a blanket type: ignore on the class,
-# would hide any *other* subclassing mistake in the same file.
+# scikit-learn ships no py.typed, so --strict refuses to subclass BaseEstimator. Relaxed for the
+# adapter alone; a blanket type: ignore would hide any other mistake in the same file.
 [[tool.mypy.overrides]]
 module = ["python_som.sklearn"]
 disallow_subclassing_any = false
+
+# numba ships no py.typed, so --strict rejects the jit decorator and `prange` as untyped. Relaxed
+# for the accelerator alone; its contract is the BmuKernel protocol, checked by a differential test.
+# These only fire when numba is installed, which is the accelerated-path CI job.
+[[tool.mypy.overrides]]
+module = ["python_som._accelerate"]
+disallow_untyped_decorators = false
+disallow_untyped_calls = false
+disable_error_code = ["attr-defined"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
@@ -257,8 +229,7 @@ markers = [
 filterwarnings = ["error"]
 
 [tool.coverage.run]
-# source_pkgs, not source: with a src layout the package under test is the installed one, and
-# coverage has to resolve it by import name rather than by directory.
+# source_pkgs, not source: with a src layout the package under test is the installed one.
 source_pkgs = ["python_som"]
 branch = true
 
@@ -266,23 +237,19 @@ branch = true
 source = ["src/python_som", "*/site-packages/python_som"]
 
 [tool.coverage.report]
-# The suite is at 100%. A lower gate would permit a silent regression, and anything genuinely
-# unreachable should carry an explicit `# pragma: no cover` a reviewer can question.
+# Anything genuinely unreachable carries an explicit `# pragma: no cover` a reviewer can question.
 fail_under = 100
 show_missing = true
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
-    # A bare `...` is a Protocol method body: a declaration of shape that is never executed, since
-    # the protocols are structural and nothing inherits from them. Excluded as a rule rather than
-    # with four identical pragmas, and narrow enough to stay honest -- it matches only a line whose
-    # entire content is an ellipsis, which in this package occurs solely in _core/_protocols.py.
+    # A bare `...` is a Protocol method body, never executed. Matches only a line whose entire
+    # content is an ellipsis, which occurs solely in _core/_protocols.py.
     "^\\s*\\.\\.\\.$",
 ]
 
 [tool.bandit]
-# `assert` is how a test states its expectation, so B101 fires on every one of them and says nothing.
-# Excluded by directory rather than by skipping the check, so B101 still applies to `src/`, where an
-# assert *would* be wrong: asserts vanish under `python -O`, so validation must raise instead.
+# B101 fires on every test assert. Excluded by directory rather than skipped, so it still applies
+# to `src/`, where an assert would be wrong: they vanish under `python -O`.
 exclude_dirs = ["tests", ".venv", "site", "dist"]

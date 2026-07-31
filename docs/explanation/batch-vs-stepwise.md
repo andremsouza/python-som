@@ -35,13 +35,11 @@ the default is 10 per sample against 1000 for the stepwise modes.
 from a zeroed array instead destroys them. On a 30×30 map with 20 samples and a small radius, that
 wiped 282 of 900 models in a single step.
 
-**The per-node sums are contracted with NumPy rather than looped over in Python.** The neighborhood
-is evaluated once per node and contracted against the per-node sums and counts. On a 20×20 map with
-150 samples this runs about 30× faster than the nested Python loop it replaces, and the two agree
-to $10^{-12}$.
-
-The full $(x, y, x, y)$ tensor would be faster still, but it costs $(xy)^2$ floats, roughly 800 MB
-for a 100×100 map, so it is not materialised.
+**The sum is contracted, not looped over.** Eq. (8) runs over every pair of nodes, and because the
+neighborhood depends only on the offset between two nodes that sum is a convolution. It is evaluated
+as two matrix products against per-axis factors, with no loop over nodes and without materialising
+the full $(x, y, x, y)$ tensor, which would cost roughly 800 MB for a 100×100 map. See
+[How batch training is computed](how-batch-training-is-computed.md).
 
 ## Random
 

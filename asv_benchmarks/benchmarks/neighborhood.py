@@ -1,20 +1,22 @@
-"""The neighborhood kernel, which is the optimization 0.4.0 rests on.
+"""The axis-matrix contraction, which is how batch training evaluates Eq. (8).
 
-Batch training needs ``h_ji`` for every pair of nodes. Because a neighborhood depends only on the
-offset between two nodes, one kernel over every offset serves the whole grid and each node's
-neighborhood is a slice of it. Evaluating per node instead was 42% of batch training on a 40x40 map.
+Eq. (8) needs ``h_ji`` for every pair of nodes. Because a neighborhood depends only on the offset
+between two nodes the sum is a convolution, and both neighborhoods batch training admits are
+separable, so it contracts to two matrix products against ``(X, X)`` and ``(Y, Y)`` matrices with no
+loop over nodes.
 
-Both paths are still benchmarked, and the per-node one is the point: it is what the kernel
-replaced, so keeping it measured is what makes the claim checkable rather than historical.
+The per-node path is benchmarked alongside it. That is what the contraction replaced, and keeping it
+measured is what makes the claim checkable rather than historical.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from python_som._core._neighborhood import kernel_view, resolve, resolve_kernel
+from python_som._core._neighborhood import axis_matrix, resolve, resolve_axis_profile
+from python_som._core._update import batch_update
 
-from .common import RADIUS, SHAPES
+from .common import FEATURES, RADIUS, SEED, SHAPES
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Callable
@@ -22,92 +24,111 @@ if TYPE_CHECKING:  # pragma: no cover
     import numpy as np
     import numpy.typing as npt
 
-#: Both neighborhoods batch training accepts, plus the signed one only stepwise can use.
-NEIGHBORHOODS = ["gaussian", "bubble", "mexican_hat"]
+#: Neighborhoods batch training admits, and so the ones with an axis profile.
+SEPARABLE = ["gaussian", "bubble"]
 
 #: No wrapping, wrapping on one axis, wrapping on both. The cyclic fold is the part of the offset
 #: machinery most likely to be got wrong, and the part whose cost is least obvious.
 CYCLIC = [(False, False), (True, False), (True, True)]
 
 
-class Kernel:
-    """Building one kernel per iteration."""
+class AxisMatrix:
+    """Building the two per-axis matrices, once per iteration."""
 
-    params = (SHAPES, NEIGHBORHOODS, CYCLIC)
+    params = (SHAPES, SEPARABLE, CYCLIC)
     param_names = ("shape", "neighborhood", "cyclic")
 
-    build: Callable[..., npt.NDArray[np.floating]]
+    profile: Callable[..., npt.NDArray[np.floating]]
 
     def setup(self, shape: tuple[int, int], neighborhood: str, cyclic: tuple[bool, bool]) -> None:
-        """Resolve the kernel builder outside the timed region.
+        """Resolve the axis profile outside the timed region.
 
         :param shape: Grid shape.
         :param neighborhood: Neighborhood function name.
         :param cyclic: Whether each axis wraps.
         """
         del shape, cyclic
-        self.build = resolve_kernel(neighborhood)
+        self.profile = resolve_axis_profile(neighborhood)
 
     def time_build(
         self, shape: tuple[int, int], neighborhood: str, cyclic: tuple[bool, bool]
     ) -> None:
-        """Time building the kernel once.
+        """Time building both matrices.
 
         :param shape: Grid shape.
         :param neighborhood: Unused.
         :param cyclic: Whether each axis wraps.
         """
         del neighborhood
-        self.build(shape, RADIUS, cyclic)
+        axis_matrix(shape[0], RADIUS, cyclic=cyclic[0], profile=self.profile)
+        axis_matrix(shape[1], RADIUS, cyclic=cyclic[1], profile=self.profile)
 
     def peakmem_build(
         self, shape: tuple[int, int], neighborhood: str, cyclic: tuple[bool, bool]
     ) -> None:
-        """Track the kernel's size, which is the justification for the whole approach.
+        """Track their size, which is the justification for the approach.
 
-        A ``(2X-1, 2Y-1)`` kernel is 198 KB at 80x80 against the 800 MB a full ``(x, y, x, y)``
-        tensor would need. A regression here would otherwise be silent.
+        ``X^2 + Y^2`` floats, against the ``(x, y, x, y)`` tensor the naive form would need, which
+        reaches 800 MB on a 100x100 map.
 
         :param shape: Grid shape.
         :param neighborhood: Unused.
         :param cyclic: Whether each axis wraps.
         """
         del neighborhood
-        self.build(shape, RADIUS, cyclic)
+        axis_matrix(shape[0], RADIUS, cyclic=cyclic[0], profile=self.profile)
+        axis_matrix(shape[1], RADIUS, cyclic=cyclic[1], profile=self.profile)
 
 
-class Slice:
-    """Taking one node's neighborhood out of a built kernel.
+class Contraction:
+    """One whole Eq. (8) update: both contractions and the guarded divide."""
 
-    Must stay a view rather than a copy. Copying ``(X, Y)`` floats per node would give back most of
-    what the kernel wins, and this is where that would show up as a trend.
-    """
+    params = (SHAPES, FEATURES)
+    param_names = ("shape", "n_features")
 
-    params = (SHAPES,)
-    param_names = ("shape",)
+    weights: npt.NDArray[np.floating]
+    sums: npt.NDArray[np.floating]
+    counts: npt.NDArray[np.floating]
+    hx: npt.NDArray[np.floating]
+    hy: npt.NDArray[np.floating]
 
-    kernel: npt.NDArray[np.floating]
-    nodes: list[tuple[int, int]]
-
-    def setup(self, shape: tuple[int, int]) -> None:
-        """Build the kernel and the node list outside the timed region.
-
-        :param shape: Grid shape.
-        """
-        self.kernel = resolve_kernel("gaussian")(shape, RADIUS, (False, False))
-        self.nodes = [(x, y) for x in range(shape[0]) for y in range(shape[1])]
-
-    def time_slice_every_node(self, shape: tuple[int, int]) -> None:
-        """Time slicing the kernel once per node, which is one batch iteration's worth.
+    def setup(self, shape: tuple[int, int], n_features: int) -> None:
+        """Build the models, accumulators and axis matrices outside the timed region.
 
         :param shape: Grid shape.
+        :param n_features: Number of features.
         """
-        for node in self.nodes:
-            kernel_view(self.kernel, shape, node)
+        import numpy as np  # noqa: PLC0415  asv collects this module without running setup
+
+        rng = np.random.default_rng(SEED)
+        self.weights = rng.normal(size=(*shape, n_features))
+        self.sums = rng.normal(size=(*shape, n_features))
+        self.counts = rng.integers(0, 3, size=shape).astype(float)
+        profile = resolve_axis_profile("gaussian")
+        self.hx = axis_matrix(shape[0], RADIUS, cyclic=False, profile=profile)
+        self.hy = axis_matrix(shape[1], RADIUS, cyclic=False, profile=profile)
+
+    def time_update(self, shape: tuple[int, int], n_features: int) -> None:
+        """Time the contraction.
+
+        :param shape: Unused.
+        :param n_features: Unused.
+        """
+        del shape, n_features
+        batch_update(self.weights, self.sums, self.counts, self.hx, self.hy)
+
+    def peakmem_update(self, shape: tuple[int, int], n_features: int) -> None:
+        """Track what one update holds at once.
+
+        :param shape: Unused.
+        :param n_features: Unused.
+        """
+        del shape, n_features
+        batch_update(self.weights, self.sums, self.counts, self.hx, self.hy)
 
 
 class PerNode:
-    """Evaluating the neighborhood once per node, which the kernel replaced."""
+    """Evaluating the neighborhood once per node, which the contraction replaced."""
 
     params = (SHAPES,)
     param_names = ("shape",)
@@ -124,7 +145,7 @@ class PerNode:
         self.nodes = [(x, y) for x in range(shape[0]) for y in range(shape[1])]
 
     def time_evaluate_every_node(self, shape: tuple[int, int]) -> None:
-        """Time the path the kernel replaced, on the same work.
+        """Time the path the contraction replaced, on the same work.
 
         :param shape: Grid shape.
         """

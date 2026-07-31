@@ -56,6 +56,8 @@ A full worked example with plots is in [examples/iris.py](https://github.com/and
 ## Features
 
 * NumPy is the only runtime dependency; a fresh install is 69 MB across one package
+* Batch training 23x to 31x faster than MiniSom and 26x to 94x faster than SOMPY, measured
+* Optional numba acceleration: `pip install numba` and it is used automatically
 * Stepwise and batch training
 * Random, random-sampling and linear (PCA) weight initialization
 * Automatic selection of the map size ratio, from PCA
@@ -114,6 +116,12 @@ transitively through this package, depend on them directly, or install `python-s
 strings are permanent and 1.0.0 will not remove them. If you saw that warning, you can stop
 migrating.
 
+**0.7.0** makes batch training 20x to 40x faster by reorganising the same arithmetic. Because the
+sums happen in a different order, trained weights differ from 0.6.1 by about 1e-15 relative. That is
+far below anything a result depends on, and it does break an exact-equality check against a stored
+map: pin `python-som==0.6.1` if you need one to match bit for bit. It also removes the neighborhood
+kernel helpers from the private `python_som._core`, which had no callers outside the package.
+
 Each change and the passage of Kohonen (2013) behind it is in the
 [changelog](https://github.com/andremsouza/python-som/blob/master/CHANGELOG.md).
 
@@ -131,6 +139,10 @@ uv run mkdocs serve          # docs, locally
 pre-commit install           # optional, run the gates on commit
 ```
 
+numba is not a declared extra: uv resolves every extra into one lockfile, so declaring it would cap
+NumPy below 2.5 for the whole project. Install it alongside when working on the accelerated path,
+with `uv run --with numba pytest tests/test_numba_kernel.py`.
+
 If you use the SonarQube for IDE (SonarLint) VS Code extension, it will also apply Sonar's Python
 rules locally; the ruff configuration is set up to cover most of the same ground.
 
@@ -140,7 +152,6 @@ Hand-run, never part of the test suite: a timing assertion on shared hardware me
 
 ```bash
 uv run python benchmarks/bench_vs_minisom.py   # vs MiniSom, agreement verified before timing
-uv run python benchmarks/bench_batch.py        # the neighborhood kernel against evaluating per node
 cd asv_benchmarks && uv run --extra bench asv continuous master HEAD   # this package across commits
 ```
 

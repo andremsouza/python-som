@@ -1,24 +1,16 @@
 """scikit-learn adapter. Import this only if you want a map to work inside scikit-learn.
 
-:class:`~python_som.SOM` already provides ``fit``, ``transform``, ``predict`` and ``score``, which
-is enough when *you* are the one calling them. It is not enough when scikit-learn does the calling:
-since 1.7, ``Pipeline.predict``, ``GridSearchCV`` and ``cross_val_score`` all reach for
-``__sklearn_tags__``, and the recommended way to have it is to inherit ``BaseEstimator``.
+:class:`~python_som.SOM` already has ``fit``, ``transform``, ``predict`` and ``score``, which is
+enough when you call them yourself. It is not enough when scikit-learn does: since 1.7,
+``Pipeline.predict``, ``GridSearchCV`` and ``cross_val_score`` reach for ``__sklearn_tags__``, and
+inheriting ``BaseEstimator`` is the supported way to have it. Defining that attribute by hand
+couples to an internal that changed shape once already, and scikit-learn discourages it.
 
-Measured against scikit-learn 1.9, the methods on :class:`~python_som.SOM` alone give ``clone`` and
-``Pipeline.fit`` and then fail: ``Pipeline.predict``, ``GridSearchCV`` and ``cross_val_score`` all
-raise ``AttributeError``. :class:`SOMEstimator` passes all five.
-
-So the integration lives here rather than in the core, and scikit-learn stays optional::
+So the integration lives here and scikit-learn stays optional::
 
     pip install "python-som[sklearn]"
 
-This is the ports-and-adapters shape the package already uses. An adapter may depend on the thing it
-adapts; the core stays numpy-only, and importing :mod:`python_som` pulls none of this in.
-
-Defining ``__sklearn_tags__`` by hand was the alternative and was rejected: it couples to an
-internal that already changed shape once between 1.6 and 1.7, and scikit-learn's own error message
-says it does not recommend the approach.
+The core stays numpy-only, and importing :mod:`python_som` pulls none of this in.
 """
 
 from __future__ import annotations
@@ -54,22 +46,18 @@ __all__ = ["SOMEstimator"]
 class SOMEstimator(ClusterMixin, TransformerMixin, BaseEstimator):
     """A self-organizing map as a scikit-learn estimator.
 
-    A SOM is a topologically-constrained k-means, so this follows ``KMeans``: ``transform`` gives a
-    cluster-distance space, ``predict`` gives one label per sample, ``score`` is negated so that
-    larger is better, and fitted attributes carry a trailing underscore.
+    Follows ``KMeans``: ``transform`` gives a cluster-distance space, ``predict`` one label per
+    sample, ``score`` a negated error so larger is better, fitted attributes a trailing underscore.
 
     >>> from python_som.sklearn import SOMEstimator
     >>> from sklearn.model_selection import GridSearchCV
     >>> search = GridSearchCV(SOMEstimator(), {"x": [4, 6]}, cv=3)   # doctest: +SKIP
 
-    **Every argument is stored unmodified.** scikit-learn's ``clone`` rebuilds an estimator by
-    passing ``get_params()`` back to ``__init__`` and then checks the result is identical, so an
-    ``__init__`` that validates, coerces or derives anything breaks cloning. All of that is deferred
-    to :meth:`fit`, which is why this class holds settings rather than a
-    :class:`~python_som.SOM`.
+    **Every argument is stored unmodified.** ``clone`` rebuilds an estimator from ``get_params()``
+    and checks the result is identical, so validating or deriving anything in ``__init__`` breaks
+    it. That is deferred to :meth:`fit`, which is why this class holds settings rather than a map.
 
-    ``input_len`` is deliberately absent: scikit-learn infers the feature count from ``X``, and
-    :attr:`n_features_in_` reports it after fitting.
+    ``input_len`` is absent: scikit-learn infers the feature count from ``X``.
     """
 
     def __init__(
@@ -94,8 +82,8 @@ class SOMEstimator(ClusterMixin, TransformerMixin, BaseEstimator):
         """Record the settings a map will be built from.
 
         Keyword-only after the grid dimensions, as ``KMeans`` is. The decays and the distance
-        default to None rather than to the functions themselves, so that the recorded parameters
-        stay exactly what the caller passed; :meth:`fit` substitutes the real defaults.
+        default to None so the recorded parameters stay exactly what the caller passed;
+        :meth:`fit` substitutes the real ones.
 
         :param x: Number of rows.
         :param y: Number of columns.
@@ -133,10 +121,9 @@ class SOMEstimator(ClusterMixin, TransformerMixin, BaseEstimator):
     def fit(self, X: Any, y: Any = None, **kwargs: Any) -> SOMEstimator:  # noqa: ANN401, ARG002, N803
         """Build a map from the recorded settings and train it on ``X``.
 
-        A fresh map every call, unlike :meth:`python_som.SOM.fit`, which continues from wherever
-        its models were. Refitting an estimator is expected to start over: ``GridSearchCV`` fits the
-        same cloned estimator on fold after fold, and carrying weights between folds would leak one
-        fold into the next.
+        A fresh map every call, unlike :meth:`python_som.SOM.fit`, which continues.
+        ``GridSearchCV`` fits one cloned estimator fold after fold, and carrying weights over would
+        leak one fold into the next.
 
         :param X: Training dataset of shape ``(n_samples, n_features)``.
         :param y: Ignored.

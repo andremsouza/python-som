@@ -43,6 +43,8 @@ nav:
       - Changelog: reference/changelog.md
   - Explanation:
       - Why isotropy matters: explanation/why-isotropy-matters.md
+      - How batch training is computed: explanation/how-batch-training-is-computed.md
+      - Why linear initialization is an SVD: explanation/why-linear-initialization-is-an-svd.md
       - Batch vs stepwise: explanation/batch-vs-stepwise.md
       - Artifact safety: explanation/artifact-safety.md
       - Comparison with MiniSom and SOMPY: explanation/comparison-with-som-libraries.md

@@ -5,43 +5,80 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.0] - 2026-07-31
 
-Nothing in the shipped package changed. This is benchmarking and the tests behind it.
+Batch training is 20x to 40x faster and now beats both comparable libraries by a wide margin. The
+arithmetic is Kohonen's, reorganised; results move by about 1e-15, which makes this a minor release
+rather than a patch.
+
+### Changed
+
+- **Batch training is 20x to 40x faster.** Measured against 0.6.1, and against MiniSom and SOMPY
+  under the fairness protocol from the comparison page:
+
+  | map | 0.6.1 | 0.7.0 | vs MiniSom | vs SOMPY |
+  | --- | --- | --- | --- | --- |
+  | 20x20 | 234.2 ms | 12.1 ms | 23.1x faster | 26.2x faster |
+  | 40x40 | 992.4 ms | 22.7 ms | 30.9x faster | 70.3x faster |
+  | 60x60 | 2780.2 ms | 54.0 ms | 30.2x faster | 94.4x faster |
+  | 100x100 | 13972.8 ms | 340.1 ms | | |
+
+  Through 0.6.1 batch training was 1.3x to 1.6x *slower* than MiniSom. Stepwise training is
+  unchanged and remains about 10% faster than MiniSom's.
+
+  Two changes. Eq. (8) sums over every pair of nodes, and because the neighborhood depends only on
+  the offset between two nodes that sum is a convolution; both neighborhoods batch training admits
+  are separable, so it contracts to two matrix products instead of one pass per node. And the
+  best-matching-unit search expands the Euclidean norm into a single matrix product rather than one
+  full-grid norm per sample. Kohonen derives Eq. (8) from Eq. (7) on the same grounds, that "the
+  same addends occur a great number of times" (Section 4.4).
+
+  Peak memory did not rise to pay for it: 3.7 MB against 4.6 MB at 100x100.
+
+- **Results are not bit-identical to 0.6.1.** The contraction sums the same terms in a different
+  order, so trained weights differ by 5.9e-16 to 8.5e-16 relative. Below anything a result depends
+  on, and enough to break an exact-equality check. Pin `python-som==0.6.1` to reproduce an older
+  figure exactly.
 
 ### Added
 
-- **A published comparison against MiniSom and SOMPY**, at
-  [Comparison with MiniSom and SOMPY](https://andremsouza.github.io/python-som/explanation/comparison-with-som-libraries/).
-  Both peers implement Kohonen's Eq. (8) and cite the same sources this package works from, so the
-  comparison is between three implementations of one published algorithm rather than between three
-  different algorithms. Getting there needed eight controls, because the packages look far more
-  interchangeable than they are: MiniSom's `train_batch` is stepwise training rather than batch,
-  only the gaussian is the same function in all three, and SOMPY's
-  `calculate_quantization_error` returns an elementwise mean absolute error rather than the usual
-  mean Euclidean distance.
+- **Optional numba acceleration** for the winner search, used automatically when numba is present:
 
-  Measured on batch training, this package is 1.3x to 2.0x faster than SOMPY and 1.3x to 1.6x
-  **slower** than MiniSom, the latter growing with map size. `batch_update` walks every node in
-  Python, 108,000 `einsum` calls on a 60x60 map over 30 iterations, where MiniSom's node-side update
-  is a single vectorised divide. Stepwise training is within 10% of MiniSom's.
+  ```bash
+  pip install numba
+  ```
 
-- **`tests/test_minisom_agreement.py`**, which checks the neighborhood functions, the decay, the
-  best-matching-unit search and both training loops against MiniSom on every run. Trained models
-  agree to 2.8e-16 relative for stepwise and 1.3e-15 for batch, which is what makes timing the two
-  against each other meaningful. It also pins the two neighborhoods that deliberately *disagree*, so
-  neither is later "fixed" into the other. Same reasoning as
-  `tests/test_linalg_matches_sklearn.py`, which once found a real 5.8% defect in this package.
+  Worth 1.0x to 2.4x on top of the above, with bit-identical results, and uneven: where the
+  neighborhood update dominates it changes little. Deliberately neither a dependency nor an extra.
+  numba 0.66 requires `numpy<2.5` while this package releases against 2.5, so requiring it would cap
+  every user's NumPy, and declaring it as an extra caps the lockfile, since uv resolves every extra
+  together. A plain `pip install python-som` is still NumPy and nothing else, which a CI job checks.
+  numba is imported on first use, so installing it does not slow `import python_som`.
 
-- **An asv suite in `asv_benchmarks/`** tracking this package against its own git history, which is
-  what numpy, scipy, pandas and scikit-learn all use asv for. Sixteen benchmarks over the training
-  loops, the neighborhood kernel, the matching functions, the SVD and the artifact round trip. No
-  timing gates anything: CI executes each benchmark once and discards the numbers, because a shared
-  runner cannot measure anything.
+- **Two explanation pages**: how batch training is computed, and why linear initialization is an
+  SVD. Both hold derivations that used to sit in docstrings.
 
-- **A `bench` extra** holding `asv` and `minisom`, kept out of `dev` because no gating job needs
-  them. SOMPY is deliberately absent and cannot be added: it uses `np.Inf`, removed in NumPy 2.0, at
-  class-definition time, so it gets an interpreter of its own that is built by hand.
+### Removed
+
+- **The neighborhood kernel machinery in `python_som._core`**: `gaussian_kernel`, `bubble_kernel`,
+  `mexican_hat_kernel`, `kernel_view`, `NEIGHBORHOOD_KERNELS`, `resolve_kernel` and `offset_span`.
+  The axis-matrix contraction replaced them and they had no remaining caller. Private names, so no
+  supported API changes.
+
+### Deprecated
+
+- **`KernelFunction`**, which is in `python_som.__all__` and no longer describes anything the
+  package produces. It still works and is removed at 1.0.0.
+
+### Fixed
+
+- **The winner search is exact for data far from the origin.** Expanding the Euclidean norm is
+  faster and cancels catastrophically when the models sit far from zero: at an offset of 1e9,
+  `||w||^2` is around 1e18 while the differences between models are of order 1, and a naive
+  expansion gives a different node for 499 of 500 samples. Centring both sides on the models' mean
+  is exact, costs 1%, and removes it at every offset tested up to 1e12. This shipped correct; the
+  entry is here because it is the same failure mode 0.4.0 fixed in linear initialization, and
+  because a regression test now pins it.
 
 ## [0.6.1] - 2026-07-30
 

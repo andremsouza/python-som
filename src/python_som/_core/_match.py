@@ -10,12 +10,19 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from ._distance import euclidean_distance
+
 if TYPE_CHECKING:  # pragma: no cover
     import numpy.typing as npt
 
-    from ._protocols import DistanceFunction
+    from ._protocols import BmuKernel, DistanceFunction
 
-__all__ = ["accumulate", "activate", "quantization", "winner"]
+__all__ = ["accumulate", "activate", "bmu_indices", "quantization", "winner"]
+
+#: Bytes the winner search may hold in its score block at once, setting the chunk size. Tuned: at
+#: 60x60 with 2000 samples an 8 MB budget is 2.6x slower and 8x heavier, because a block that fits
+#: in cache is read back by ``argmin`` for free. See /explanation/how-batch-training-is-computed.
+_SCORE_BUDGET_BYTES = 512_000
 
 
 def activate(
@@ -59,7 +66,67 @@ def quantization(
     :param distance: Dissimilarity measure.
     :return: One distance per sample.
     """
-    return np.array([distance(i, weights[winner(i, weights, distance)]) for i in data])
+    flat = weights.reshape(-1, weights.shape[-1])
+    nodes = bmu_indices(data, weights, distance)
+    # The distance is recomputed against the chosen model rather than read out of the search, which
+    # keeps this exact for the Euclidean case: `bmu_indices` drops ||x||^2, so its scores order the
+    # models correctly but are not distances.
+    return np.array([distance(x, flat[node]) for x, node in zip(data, nodes, strict=True)])
+
+
+def bmu_indices(
+    data: npt.NDArray[Any],
+    weights: npt.NDArray[Any],
+    distance: DistanceFunction,
+    kernel: BmuKernel | None = None,
+) -> npt.NDArray[np.intp]:
+    """Return the flat index of the best-matching model for every sample.
+
+    This is Eq. (4) of Kohonen (2013), ``c = argmin_i ||x - m_i||``, for a whole dataset. Ties go to
+    the first index in C order, which is ``argmin``'s behaviour and matches :func:`winner`.
+
+    For the Euclidean distance this expands the norm and drops the ``||x||^2`` term, which is
+    constant across models, leaving a matrix product. Any other distance takes the loop, since only
+    the Euclidean one has that identity.
+
+    **Not the dot-product map of Kohonen Section 4.5**, which is a different algorithm requiring
+    renormalized models. This is an exact re-expansion of the Euclidean distance.
+
+    **The centring is not an optimization.** Without it the expansion cancels catastrophically:
+    with models offset by 1e9, 499 of 500 samples get a different node. See
+    :doc:`/explanation/how-batch-training-is-computed`.
+
+    :param data: Dataset of shape ``(n_samples, n_features)``.
+    :param weights: Models, of shape ``(x, y, n_features)``.
+    :param distance: Dissimilarity measure.
+    :param kernel: Optional accelerated search, from ``python_som._accelerate``. Passed in rather
+        than imported, so this module stays numpy-only.
+    :return: One flat node index per sample.
+    """
+    flat = weights.reshape(-1, weights.shape[-1])
+    if distance is not euclidean_distance:
+        return np.array([np.asarray(distance(x, flat)).argmin() for x in data], dtype=np.intp)
+
+    shift = flat.mean(axis=0)
+    centred = flat - shift
+    squared = np.einsum("nf,nf->n", centred, centred)
+
+    if kernel is not None:  # pragma: no cover  reached only when numba is installed
+        return kernel(data - shift, centred, squared)
+
+    n_nodes = len(flat)
+    chunk = max(1, _SCORE_BUDGET_BYTES // (n_nodes * 8))
+    scores = np.empty((chunk, n_nodes))
+    out = np.empty(len(data), dtype=np.intp)
+    for start in range(0, len(data), chunk):
+        block = data[start : start + chunk]
+        # Into a preallocated buffer: allocating one per chunk was 1.5x slower and 8x heavier.
+        np.matmul(block - shift, centred.T, out=scores[: len(block)])
+        block_scores = scores[: len(block)]
+        block_scores *= -2.0
+        block_scores += squared
+        out[start : start + len(block)] = block_scores.argmin(axis=1)
+    return out
 
 
 def accumulate(
@@ -67,6 +134,7 @@ def accumulate(
     weights: npt.NDArray[Any],
     shape: tuple[int, int],
     distance: DistanceFunction,
+    kernel: BmuKernel | None = None,
 ) -> tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
     """Sum the samples mapped to each node, and count them.
 
@@ -77,12 +145,12 @@ def accumulate(
     :param weights: Models, of shape ``(x, y, n_features)``.
     :param shape: Shape of the grid.
     :param distance: Dissimilarity measure.
+    :param kernel: Optional accelerated search; see :func:`bmu_indices`.
     :return: Per-node sums of shape ``(x, y, n_features)`` and counts of shape ``(x, y)``.
     """
-    sums = np.zeros((*shape, weights.shape[-1]))
-    counts = np.zeros(shape)
-    for sample in data:
-        node = winner(sample, weights, distance)
-        sums[node] += sample
-        counts[node] += 1
-    return sums, counts
+    nodes = bmu_indices(data, weights, distance, kernel)
+    n_nodes = shape[0] * shape[1]
+    sums = np.zeros((n_nodes, weights.shape[-1]))
+    np.add.at(sums, nodes, data)
+    counts = np.bincount(nodes, minlength=n_nodes).astype(float)
+    return sums.reshape(*shape, weights.shape[-1]), counts.reshape(shape)

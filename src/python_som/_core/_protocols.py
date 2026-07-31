@@ -1,18 +1,14 @@
-"""Contracts for the three strategies a caller can replace.
+"""Contracts for the strategies a caller can replace.
 
-A neighborhood, a decay and a distance are all things a user may supply their own version of. Typed
-as bare ``Callable[...]`` aliases, mypy checks little more than the argument count; as Protocols it
-checks the shape of the call against a named contract, and the error names the protocol rather than
-printing two structural types side by side.
+Protocols rather than bare ``Callable`` aliases, so mypy checks the shape of the call against a
+named contract instead of only the argument count.
 
-**Every parameter is positional-only** (the ``/`` in each ``__call__``). Without it, a Protocol
-requires the *names* to match as well as the types, so a user's ``def my_decay(rate, step, total)``
-would fail against a protocol that named them differently. Positional-only says what is actually
-true: these are called positionally, and only the order and the types matter.
+**Every parameter is positional-only.** Without the ``/``, a Protocol also requires the parameter
+*names* to match, so a user's ``def my_decay(rate, step, total)`` would fail against a protocol that
+named them differently.
 
-These are structural, so nothing needs to inherit from them. Every function already in the package
-satisfies its protocol, and so does any existing user-supplied callable with the right signature --
-this adds checking, not a requirement.
+Structural, so nothing inherits from them: this adds checking, not a requirement. See
+:doc:`/how-to/use-a-custom-strategy`.
 """
 
 from __future__ import annotations
@@ -23,16 +19,23 @@ if TYPE_CHECKING:  # pragma: no cover
     import numpy as np
     import numpy.typing as npt
 
-__all__ = ["DecayFunction", "DistanceFunction", "KernelFunction", "NeighborhoodFunction"]
+__all__ = [
+    "AxisProfile",
+    "BmuKernel",
+    "DecayFunction",
+    "DistanceFunction",
+    "KernelFunction",
+    "NeighborhoodFunction",
+]
 
 
 @runtime_checkable
 class NeighborhoodFunction(Protocol):
     """Weights the winner's correction across the grid, as a function of grid distance.
 
-    Kohonen (2013) Eq. (5) requires this to depend on ``sqdist(c, i)`` alone -- the distance between
-    two nodes -- not on the two axis offsets separately. A separable product of per-axis profiles
-    satisfies the signature but is only correct for the gaussian.
+    Kohonen (2013) Eq. (5) requires this to depend on ``sqdist(c, i)`` alone, not on the two axis
+    offsets separately. A separable product satisfies the signature and is only correct for the
+    gaussian.
     """
 
     def __call__(
@@ -74,7 +77,7 @@ class DistanceFunction(Protocol):
     """Dissimilarity between an input vector and one or many models.
 
     Called both with a single model and with the whole ``(x, y, n_features)`` array, so an
-    implementation must broadcast over leading axes rather than assume one vector.
+    implementation must broadcast over leading axes.
     """
 
     def __call__(self, x: Any, weights: Any, /) -> npt.NDArray[np.floating]:  # noqa: ANN401
@@ -88,11 +91,60 @@ class DistanceFunction(Protocol):
 
 
 @runtime_checkable
+class BmuKernel(Protocol):
+    """An accelerated best-matching-unit search, supplied from outside the core.
+
+    Optional. ``python_som._accelerate`` provides one with the ``fast`` extra installed; otherwise
+    the NumPy path in :func:`~python_som._core._match.bmu_indices` runs. Passed as an argument
+    rather than imported, so the core stays numpy-only.
+
+    Both arrays arrive already shifted by a common vector, which is what stops the expanded norm
+    cancelling far from the origin. A kernel must not shift them again.
+    """
+
+    def __call__(
+        self,
+        centred_data: npt.NDArray[np.floating],
+        centred_models: npt.NDArray[np.floating],
+        squared: npt.NDArray[np.floating],
+        /,
+    ) -> npt.NDArray[np.intp]:
+        """Return the index of the nearest model for each sample.
+
+        :param centred_data: Samples, shifted, of shape ``(n_samples, n_features)``.
+        :param centred_models: Models, shifted, of shape ``(n_nodes, n_features)``.
+        :param squared: Squared norm of each centred model.
+        :return: One flat node index per sample, ties going to the lowest index.
+        """
+        ...
+
+
+@runtime_checkable
+class AxisProfile(Protocol):
+    """The per-axis factor of a separable neighborhood, over offsets along one axis.
+
+    Defined only where the factorisation is an identity, which is the gaussian and the bubble. Not a
+    general way to build a neighborhood: :class:`NeighborhoodFunction` remains the definition.
+    """
+
+    def __call__(self, d: npt.NDArray[np.floating], sigma: float, /) -> npt.NDArray[np.floating]:
+        """Evaluate the factor over offsets along one axis.
+
+        :param d: Offsets along the axis.
+        :param sigma: Neighborhood radius.
+        :return: Weights for those offsets.
+        """
+        ...
+
+
+@runtime_checkable
 class KernelFunction(Protocol):
     """A neighborhood evaluated over every offset at once, independent of any particular winner.
 
-    The kernel form of a :class:`NeighborhoodFunction`, used by batch training so that the
-    neighborhood is computed once per iteration rather than once per node.
+    .. deprecated:: 0.7.0
+        Batch training now contracts an :class:`AxisProfile` per axis, and nothing in the package
+        produces a kernel. Retained because it is part of the public surface; it will be removed at
+        1.0.0.
     """
 
     def __call__(

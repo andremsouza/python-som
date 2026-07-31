@@ -3,9 +3,12 @@
 Three Python packages implement Kohonen's self-organizing map. This page measures python-som against
 the other two, and spends most of its length on why that measurement is harder than it looks.
 
-The short version: on batch training python-som is **1.3x to 2.0x faster than SOMPY** and **1.3x to
-1.6x slower than MiniSom**, with the gap against MiniSom growing as the map grows. On stepwise
-training python-som and MiniSom are within about 10% of each other. SOMPY has no stepwise mode.
+The short version, as of 0.7.0: on batch training python-som is **23x to 31x faster than MiniSom**
+and **26x to 94x faster than SOMPY**. On stepwise training python-som and MiniSom are within about
+10% of each other. SOMPY has no stepwise mode.
+
+Through 0.6.1 batch training was 1.3x to 1.6x *slower* than MiniSom.
+[How batch training is computed](how-batch-training-is-computed.md) covers what changed.
 
 ## Why a naive comparison is wrong
 
@@ -74,34 +77,35 @@ With those in place the trained models agree, which is what makes the timings me
 
 ## The numbers
 
-Medians of 9 interleaved repeats. python-som 0.6.1, MiniSom 2.3.6 on NumPy 2.5.1, SOMPY @6aca604 on
+Medians of 9 interleaved repeats. python-som 0.7.0, MiniSom 2.3.6 on NumPy 2.5.1, SOMPY @6aca604 on
 NumPy 1.26.4, CPython 3.12.13, Linux, Intel Core Ultra 9 275HX.
 
 ### Against MiniSom
 
 | map | samples | features | mode | python-som | MiniSom | result |
 | --- | --- | --- | --- | --- | --- | --- |
-| 20x20 | 200 | 4 | batch | 232.5 ms | 239.2 ms | 1.03x faster |
-| 40x40 | 300 | 6 | batch | 1016.6 ms | 758.7 ms | **1.34x slower** |
-| 60x60 | 400 | 8 | batch | 2885.2 ms | 1763.0 ms | **1.64x slower** |
-| 20x20 | 200 | 4 | sequential | 1.2 ms | 1.4 ms | 1.12x faster |
-| 40x40 | 300 | 6 | sequential | 2.4 ms | 2.5 ms | 1.06x faster |
-| 60x60 | 400 | 8 | sequential | 4.4 ms | 4.7 ms | 1.08x faster |
+| 20x20 | 200 | 4 | batch | 9.8 ms | 227.2 ms | **23.09x faster** |
+| 40x40 | 300 | 6 | batch | 22.6 ms | 698.6 ms | **30.93x faster** |
+| 60x60 | 400 | 8 | batch | 55.9 ms | 1684.7 ms | **30.15x faster** |
+| 20x20 | 200 | 4 | sequential | 1.2 ms | 1.3 ms | 1.11x faster |
+| 40x40 | 300 | 6 | sequential | 2.4 ms | 2.6 ms | 1.11x faster |
+| 60x60 | 400 | 8 | sequential | 4.1 ms | 4.4 ms | 1.08x faster |
 
-**python-som's batch training is slower, and the reason is structural rather than incidental.**
-`batch_update` walks every node in Python: on a 60x60 map over 30 iterations that is 108,000
-`einsum` calls. MiniSom's node-side update is a single vectorised divide, and its Python loop runs
-over the 400 samples instead. So the ratio tracks nodes against samples, which is why the gap is
-absent at 20x20 and 1.64x at 60x60. Vectorising the node loop is the obvious fix, and has not been
-done.
+The batch gap is 0.7.0's doing and comes from two changes: Eq. (8) contracts as two matrix products
+instead of one pass per node, and the winner search is one matrix product instead of one norm per
+sample. Stepwise is unchanged, and unchanged is the right outcome there: it evaluates one
+neighborhood per step, so there was no per-node loop to remove.
+
+Peak memory is 0.6 MB, 0.9 MB and 1.4 MB against MiniSom's 0.1 MB, 0.5 MB and 1.6 MB. At 100x100 it
+is 3.7 MB against 4.6 MB before the change, so the speedup did not cost memory.
 
 ### Against SOMPY
 
 | map | samples | features | python-som | SOMPY | result |
 | --- | --- | --- | --- | --- | --- |
-| 20x20 | 200 | 4 | 145.4 ms | 188.3 ms | 1.30x faster |
-| 40x40 | 300 | 6 | 727.7 ms | 1264.6 ms | 1.74x faster |
-| 60x60 | 400 | 8 | 1906.4 ms | 3796.6 ms | 1.99x faster |
+| 20x20 | 200 | 4 | 6.7 ms | 176.1 ms | **26.20x faster** |
+| 40x40 | 300 | 6 | 17.1 ms | 1201.3 ms | **70.31x faster** |
+| 60x60 | 400 | 8 | 38.6 ms | 3642.1 ms | **94.36x faster** |
 
 Batch only, since SOMPY implements nothing else: `SOMFactory.build` accepts `training='seq'` and
 ignores it.
@@ -121,7 +125,7 @@ scaled by 10 and offset 100 from the origin:
 | --- | --- | --- | --- |
 | 20x20 | 1.6797 | 1.1157 | MiniSom |
 | 40x40 | 0.2855 | 0.6265 | python-som |
-| 60x60 | 0.0937 | 0.5009 | python-som |
+| 60x60 | 0.0873 | 0.5009 | python-som |
 
 The three initializers place models on the plane of the first two principal components and differ in
 how far apart. python-som uses $\bar{x} + c_1\sqrt{\lambda_1}v_1 + c_2\sqrt{\lambda_2}v_2$, scaling
@@ -182,7 +186,8 @@ because shared runners cannot measure anything: an earlier version of this compa
 The peers are pinned, and MiniSom's development branch has already moved past its release with a
 numba-compiled batch path that would change these numbers substantially.
 
-Both peers are worth using. MiniSom is faster at batch training on larger maps and has hexagonal
-topologies, which python-som does not. SOMPY has clustering and visualization helpers built in. What
-python-som offers against them is NumPy as its only runtime dependency, a scikit-learn estimator
-interface, pickle-free artifacts with provenance, and type information.
+Both peers are worth using. MiniSom has hexagonal topologies, a triangular neighborhood and several
+distance metrics, none of which python-som has. SOMPY has clustering and visualization helpers built
+in. What python-som offers against them is speed on batch training, NumPy as its only runtime
+dependency, a scikit-learn estimator interface, pickle-free artifacts with provenance, and type
+information.

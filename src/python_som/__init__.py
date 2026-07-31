@@ -9,10 +9,8 @@ passed to it or used directly.
 >>> som.weight_initialization(mode="linear", data=data)
 >>> error = som.train(data, n_iteration=100, mode="batch")
 
-Internally the package is a pure functional core with a thin shell around it:
-:mod:`python_som._core` holds every numeric decision as functions over NumPy arrays, and imports
-nothing but NumPy. :mod:`python_som._convert` adapts pandas and anything else array-like at the
-boundary, and :mod:`python_som._som` holds the state and the training loops.
+Internally, :mod:`python_som._core` holds every numeric decision as pure functions over NumPy
+arrays and imports nothing else; a thin shell around it handles conversion, state and I/O.
 
 Reference:
 Teuvo Kohonen, Essentials of the self-organizing map, Neural Networks 37 (2013) 52-65,

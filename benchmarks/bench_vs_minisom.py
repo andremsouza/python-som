@@ -5,8 +5,8 @@ would be flaky::
 
     uv run python benchmarks/bench_vs_minisom.py
 
-Method is the same as ``bench_update.py`` and ``bench_batch.py``, and the interleaving helper is
-imported from the first rather than copied: **interleaved** arms so thermal and load drift is split
+Method is the same as ``bench_update.py``, whose interleaving helper is imported rather than
+copied: **interleaved** arms so thermal and load drift is split
 evenly rather than attributed to one of them, **medians with an interquartile range** rather than
 minima, and **equality asserted first**.
 
@@ -44,8 +44,7 @@ the
 sequential cases that pass is larger than the training itself: 30 steps touch 30 samples, the report
 touches all 400. The first version of this script did exactly that and reported this package as
 **7.10x slower** on the largest sequential case. Timing the loop, the same case is **1.08x faster**.
-Both numbers were reproducible; only one of them measured training. ``bench_batch.py`` avoids the
-same trap by reproducing the loop rather than calling the public method.
+Both numbers were reproducible; only one of them measured training.
 
 Two tables are printed and the difference between them matters:
 
@@ -368,7 +367,7 @@ def own_initializer() -> list[str]:
         data = rng.normal(size=(n_samples, n_features)) * 10.0 + 100.0
 
         # functools.partial rather than a closure: a closure over the loop variables would time
-        # whatever they held when it ran, not when it was written. Same reason bench_batch.py does.
+        # whatever they held when it ran, not when it was written.
         ours = functools.partial(seed_and_train_ours, shape, data, n_iteration)
         theirs = functools.partial(seed_and_train_theirs, shape, data, n_iteration)
 

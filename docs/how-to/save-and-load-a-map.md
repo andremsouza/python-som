@@ -32,7 +32,7 @@ with np.load("iris-map.npz", allow_pickle=False) as archive:
 ```json
 {
   "format_version": 1,
-  "python_som_version": "0.4.0",
+  "python_som_version": "0.7.0",
   "numpy_version": "2.5.1",
   "config": {
     "shape": [10, 10], "input_len": 4,
@@ -48,7 +48,7 @@ with np.load("iris-map.npz", allow_pickle=False) as archive:
     "mode": "batch", "n_iteration": 100, "n_samples": 150, "random_seed": 42,
     "final_learning_rate": null, "final_neighborhood_radius": 0.5,
     "quantization_error": 0.3142,
-    "python_som_version": "0.4.0", "numpy_version": "2.5.1", "wall_time_seconds": 0.42
+    "python_som_version": "0.7.0", "numpy_version": "2.5.1", "wall_time_seconds": 0.42
   }
 }
 ```
