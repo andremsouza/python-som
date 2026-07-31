@@ -109,6 +109,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+# Built by hand for benchmarks/bench_vs_sompy.py. SOMPY cannot be installed alongside this package,
+# because it uses np.Inf and so cannot be imported on NumPy 2, so it gets an interpreter of its own.
+.venv-sompy/
 
 # Spyder project settings
 .spyderproject
