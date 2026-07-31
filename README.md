@@ -18,6 +18,7 @@ pip install python-som                  # requires Python 3.10+; NumPy is the on
 pip install "python-som[cli]"           # adds tqdm progress bars
 pip install "python-som[sklearn]"       # adds the scikit-learn estimator adapter
 pip install "python-som[examples]"      # adds matplotlib and seaborn, for the plots
+pip install "python-som[fast]"          # adds a numba kernel; note it requires numpy<2.5
 ```
 
 ## Quick start
@@ -56,6 +57,7 @@ A full worked example with plots is in [examples/iris.py](https://github.com/and
 ## Features
 
 * NumPy is the only runtime dependency; a fresh install is 69 MB across one package
+* Batch training 23x to 31x faster than MiniSom and 26x to 94x faster than SOMPY, measured
 * Stepwise and batch training
 * Random, random-sampling and linear (PCA) weight initialization
 * Automatic selection of the map size ratio, from PCA
@@ -113,6 +115,12 @@ transitively through this package, depend on them directly, or install `python-s
 **0.5.0** briefly made plain-string options emit a `DeprecationWarning`. **0.6.0 withdrew that**:
 strings are permanent and 1.0.0 will not remove them. If you saw that warning, you can stop
 migrating.
+
+**0.7.0** makes batch training 20x to 40x faster by reorganising the same arithmetic. Because the
+sums happen in a different order, trained weights differ from 0.6.1 by about 1e-15 relative. That is
+far below anything a result depends on, and it does break an exact-equality check against a stored
+map: pin `python-som==0.6.1` if you need one to match bit for bit. It also removes the neighborhood
+kernel helpers from the private `python_som._core`, which had no callers outside the package.
 
 Each change and the passage of Kohonen (2013) behind it is in the
 [changelog](https://github.com/andremsouza/python-som/blob/master/CHANGELOG.md).

@@ -25,7 +25,7 @@ Numerical results are allowed to change between minor versions before 1.0.0, and
 versions after it. A seed alone does not pin a result across an upgrade.
 
 ```
-python-som==0.4.0
+python-som==0.7.0
 ```
 
 Two specific breaks worth knowing about, if you are reproducing an older figure:
@@ -35,6 +35,9 @@ Two specific breaks worth knowing about, if you are reproducing an older figure:
 - **0.4.0** fixed an accuracy defect in linear initialization for data far from the origin. Near the
   origin the difference is floating-point noise; far from it, it is large, and 0.4.0 is the correct
   one.
+- **0.7.0** made batch training 20x to 40x faster by reorganising the same arithmetic, which sums in
+  a different order. Weights differ from 0.6.1 by about 1e-15 relative: far below anything a result
+  depends on, and still not bit-identical. Pin `python-som==0.6.1` if you need an exact match.
 
 ## Record what you ran
 
