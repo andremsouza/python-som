@@ -65,7 +65,7 @@ docs = [
     # redirects) has no v1.2.3 tag; PyPI's 1.2.3 declares its source as a different repository
     # created two weeks before it was published. 1.2.2 is the last release whose provenance checks
     # out. Do not bump without re-checking who publishes it.
-    "mkdocs-redirects==1.2.2",
+    "mkdocs-redirects==1.2.3",
     "mkdocstrings-python==2.0.5",
 ]
 # Review tools, kept out of `dev` so CI jobs that never run them do not install them. Nothing here
