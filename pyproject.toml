@@ -40,7 +40,7 @@ dev = [
     # Test-only. tests/test_minisom_agreement.py checks this package's equations against MiniSom's.
     # MIT, a single file, and it declares no dependencies of its own.
     "minisom==2.3.6",
-    "mypy==2.3.0",
+    "mypy==2.3.1",
     # Test-only: the DataFrame path through the port, and the differential PCA test. Pinned because
     # scikit-learn changed its default PCA solver in 1.5, and a floating pin would surface that as
     # an unrelated PR's CI failure. Split by Python version, since the current majors dropped 3.10.
@@ -50,14 +50,14 @@ dev = [
     "scikit-learn==1.7.2; python_version < '3.11'",
     # pandas-stubs 3.x needs Python >=3.11; gated rather than raising the library's floor.
     "pandas-stubs==3.0.3.260530; python_version >= '3.11'",
-    "pre-commit==4.6.1",
+    "pre-commit==4.6.2",
     "pytest==9.1.1",
     "pytest-cov==7.1.0",
-    "ruff==0.16.0",
+    "ruff==0.16.5",
     # tomllib entered the stdlib in 3.11; tomli is the backport it was derived from.
     "tomli==2.4.1; python_version < '3.11'",
     "twine==7.0.0",
-    "types-tqdm==4.69.0.20260728",
+    "types-tqdm==4.70.0.20260827",
 ]
 docs = [
     "mkdocs-material==9.7.7",
