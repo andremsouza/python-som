@@ -66,7 +66,7 @@ docs = [
     # created two weeks before it was published. 1.2.2 is the last release whose provenance checks
     # out. Do not bump without re-checking who publishes it.
     "mkdocs-redirects==1.2.3",
-    "mkdocstrings-python==2.0.5",
+    "mkdocstrings-python==2.0.7",
 ]
 # Review tools, kept out of `dev` so CI jobs that never run them do not install them. Nothing here
 # gates a merge; ruff and mypy are the enforced checks.
