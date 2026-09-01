@@ -95,7 +95,7 @@ analysis = [
     "pip-audit==2.10.1",
     # PyCQA, first released 2009. Not wired into any gate; here so the findings a contributor's IDE
     # reports can be reproduced from the command line.
-    "pylint==4.0.6",
+    "pylint==4.0.8",
 ]
 # scikit-learn integration. Only python_som.sklearn imports it. Lower bounds rather than pins:
 # these are user-facing install sets, not tooling. `examples` restores what 0.3.0 installed.
