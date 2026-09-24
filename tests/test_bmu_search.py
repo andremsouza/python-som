@@ -229,9 +229,12 @@ def test_accumulate_and_quantization_go_through_the_same_search() -> None:
     _, counts = accumulate(data, weights, shape, euclidean_distance)
     nodes = bmu_indices(data, weights, euclidean_distance)
 
-    expected_counts = np.bincount(nodes, minlength=shape[0] * shape[1]).reshape(shape)
+    expected_counts = np.broadcast_to(
+        np.bincount(nodes, minlength=shape[0] * shape[1]).reshape(shape)[..., None],
+        counts.shape,
+    )
     np.testing.assert_array_equal(counts, expected_counts.astype(float))
-    assert counts.sum() == len(data)
+    assert counts.sum() == len(data) * data.shape[1]
 
     flat = weights.reshape(-1, weights.shape[-1])
     errors = quantization(data, weights, euclidean_distance)

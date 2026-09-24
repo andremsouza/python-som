@@ -51,12 +51,12 @@ def pca(data: npt.NDArray[Any], n_components: int = _N_COMPONENTS) -> PrincipalC
     :return: The fitted mean, components and explained variance.
     """
     array = np.asarray(data, dtype=float)
-    mean = array.mean(axis=0)
+    mean = np.nanmean(array, axis=0)
     _, singular_values, right_vectors = np.linalg.svd(array - mean, full_matrices=False)
 
     # Orient each component on its largest-magnitude loading. The flip is applied to all of them
     # before truncation, which is the order scikit-learn does it in.
-    dominant = np.argmax(np.abs(right_vectors), axis=1)
+    dominant = np.nanargmax(np.abs(right_vectors), axis=1)
     signs = np.sign(right_vectors[np.arange(right_vectors.shape[0]), dominant])
     right_vectors = right_vectors * signs[:, None]
 
@@ -84,8 +84,8 @@ def standardize(data: npt.NDArray[Any]) -> npt.NDArray[np.floating]:
     :return: The standardized array.
     """
     array = np.asarray(data, dtype=float)
-    mean = array.mean(axis=0)
-    variance = array.var(axis=0)
+    mean = np.nanmean(array, axis=0)
+    variance = np.nanvar(array, axis=0)
 
     n_samples = array.shape[0]
     eps = np.finfo(np.float64).eps

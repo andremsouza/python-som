@@ -27,7 +27,9 @@ def euclidean_distance(a: npt.ArrayLike, b: npt.ArrayLike) -> npt.NDArray[np.flo
     :param b: Array-like of values. Must not be a scalar.
     :return: Distances between ``a`` and ``b``.
     """
-    result: npt.NDArray[np.floating] = np.linalg.norm(np.subtract(a, b), ord=2, axis=-1)
+    result: npt.NDArray[np.floating] = np.linalg.norm(
+        np.nan_to_num(np.subtract(a, b)), ord=2, axis=-1
+    )
     return result
 
 

@@ -72,7 +72,7 @@ def _per_node_reference(
 
     :param weights: Current models.
     :param sums: Per-node sums.
-    :param counts: Per-node counts.
+    :param counts: Per-node, per-feature counts.
     :param shape: Grid shape.
     :param name: Neighborhood function name.
     :param sigma: Neighborhood radius.
@@ -84,17 +84,21 @@ def _per_node_reference(
     for node in np.ndindex(shape):
         node_2d = (int(node[0]), int(node[1]))
         h = evaluate(shape, node_2d, sigma, cyclic)
-        denominator = float(np.sum(h * counts))
-        if denominator > 0:
-            updated[node_2d] = np.einsum("xy,xyf->f", h, sums) / denominator
+        denominator = np.einsum("xy,xyf->f", h, counts)
+        np.divide(
+            np.einsum("xy,xyf->f", h, sums),
+            denominator,
+            out=updated[node_2d],
+            where=denominator > 0,
+        )
     return updated
 
 
 def _case(shape: tuple[int, int], n_features: int = 3) -> tuple[np.ndarray, ...]:
     """Build models, per-node sums and per-node counts for one grid.
 
-    Counts are drawn with zeros in them on purpose: a node with no data in reach is the case that
-    must keep its previous value, and it is the one a naive implementation destroys.
+    Per-feature counts are drawn with zeros in them on purpose: a node with no data in reach is the
+    case that must keep its previous value, and it is the one a naive implementation destroys.
 
     :param shape: Grid shape.
     :param n_features: Number of features.
@@ -104,7 +108,7 @@ def _case(shape: tuple[int, int], n_features: int = 3) -> tuple[np.ndarray, ...]
     return (
         rng.normal(size=(*shape, n_features)),
         rng.normal(size=(*shape, n_features)),
-        rng.integers(0, 3, size=shape).astype(float),
+        rng.integers(0, 3, size=(*shape, n_features)).astype(float),
     )
 
 
@@ -196,7 +200,7 @@ def test_the_update_is_concurrent_over_every_node() -> None:
     # node's new value, this would disagree.
     late = (shape[0] - 1, shape[1] - 1)
     h = gaussian(shape, late, sigma, (False, False))
-    expected = np.einsum("xy,xyf->f", h, sums) / float(np.sum(h * counts))
+    expected = np.einsum("xy,xyf->f", h, sums) / np.einsum("xy,xyf->f", h, counts)
     np.testing.assert_allclose(updated[late], expected, rtol=1e-12)
 
     assert not np.shares_memory(updated, weights), "the update must not alias its input"

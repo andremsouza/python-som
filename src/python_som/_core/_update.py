@@ -71,13 +71,16 @@ def batch_update(
 
     :param weights: Current models, of shape ``(x, y, n_features)``.
     :param sums: Per-node sums of the samples mapped to each node.
-    :param counts: Per-node counts of the samples mapped to each node.
+    :param counts: Per-node, per-feature counts of observed samples, of shape
+        ``(x, y, n_features)``.
     :param hx: Per-axis neighborhood factor for the first axis, of shape ``(x, x)``.
     :param hy: Per-axis neighborhood factor for the second axis, of shape ``(y, y)``.
     :return: The updated models, as a new array.
     """
     numerator = np.einsum("ac,bd,cdf->abf", hx, hy, sums, optimize=True)
-    denominator = np.einsum("ac,bd,cd->ab", hx, hy, counts, optimize=True)
+    if counts.ndim == 2:
+        counts = counts[..., None]
+    denominator = np.einsum("ac,bd,cdf->abf", hx, hy, counts, optimize=True)
     updated = weights.copy()
-    np.divide(numerator, denominator[..., None], out=updated, where=denominator[..., None] > 0)
+    np.divide(numerator, denominator, out=updated, where=denominator > 0)
     return updated
