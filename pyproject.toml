@@ -36,7 +36,7 @@ dependencies = [
 [project.optional-dependencies]
 cli = ["tqdm>=4.66"]
 dev = [
-    "hypothesis==6.163.0",
+    "hypothesis==6.168.3",
     # Test-only. tests/test_minisom_agreement.py checks this package's equations against MiniSom's.
     # MIT, a single file, and it declares no dependencies of its own.
     "minisom==2.3.6",
